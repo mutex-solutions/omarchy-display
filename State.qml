@@ -90,7 +90,10 @@ Item {
             var mode = String(modes[i])
             if (mode.indexOf("@60") !== -1 || mode.indexOf("@59") !== -1) { has60 = true; break }
           }
-          s.supports60 = has60
+          // A custom 60 Hz mode is not in availableModes (the XPS panel
+          // advertises only its native 120), so also allow the downshift
+          // whenever the rate is above 60.
+          s.supports60 = has60 || s.monitorRefresh > 60
         } catch (e) {
         }
       }
