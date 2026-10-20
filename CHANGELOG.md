@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.2
+
+The free-drag interaction from the Deck mock, ported into the panel.
+
+- **Complete-placement snapping** replaces the per-axis snap. A candidate is a
+  whole placement relative to another display, so a snap always produces a
+  touching layout instead of aligning an edge at a distance.
+- **Tolerances**: edge 12 screen px, corner 8, centre line 5. A corner is two
+  edge-type alignments; a centred line uses its own tighter limit so it cannot
+  steal an edge connection on displays of different sizes.
+- **Corner to corner**, including the diagonal placement where two corners
+  meet. Corner contact counts as attached.
+- **Guides** at the matched lines and a marker where they cross, plus a status
+  row with the alignment and the exact coordinates.
+- **Hysteresis**: hold 1.5x for 160 ms, with a timer so a held snap releases
+  even if the pointer stops moving. A shaky hand cannot knock it loose.
+- **Minimum overlap** at the ends of an edge, so the strip just past an edge
+  still connects instead of doing nothing.
+- **Invalid layout** strip: a display that shares no edge or corner, or an
+  overlap, is reported rather than silently accepted.
+- The eight preset boxes are gone; dragging with guides is the whole
+  placement control.
+- Preview fit reserves half a display of drag room on each side, which suits
+  the narrow panel.
+
 ## 0.3.1
 
 Free placement.

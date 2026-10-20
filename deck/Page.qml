@@ -3,17 +3,18 @@ import qs.Commons
 
 // Display page, rendered by Deck and by this plugin's own popup.
 //
-// One monitor is the *target*: the one the controls act on. It starts as the
-// focused output and can be picked from the layout preview or the list below.
-// Placement is chosen spatially: the boxes around the reference monitor are
-// the eight places the target can go.
+// One monitor is the *target*: the one the switches and window actions act
+// on. Placement is free: drag any display, and it snaps to the edges,
+// corners and centre lines of the others, with guides showing what it
+// latched onto. A layout where a display does not touch another one is
+// flagged as invalid, as is an overlap.
 Item {
   id: page
 
   property var state: null
   property var host: null
 
-  // The monitor the controls act on. Empty means "follow the focused one".
+  // The monitor the switches act on. Empty means "follow the focused one".
   property string targetName: ""
 
   implicitHeight: col.implicitHeight
@@ -27,9 +28,8 @@ Item {
     return state.focusedMonitor
   }
 
-  // Monitors the target can be arranged against. A mirrored output is not
-  // part of the desktop, so while one is active the arrange controls step
-  // aside instead of offering a position that would silently undo the mirror.
+  // Monitors the target can be compared with. A mirrored output is not part
+  // of the desktop, so it is not part of the arrangement.
   readonly property var others: {
     if (!state || !target) return []
     var out = []
@@ -57,48 +57,6 @@ Item {
   readonly property var windowTarget: moveTargets.length ? moveTargets[0] : null
 
   function select(name) { page.targetName = name }
-
-  // ------------------------------------------------------------- placement
-  //
-  // Eight slots: the four edges and the four corners around the reference
-  // monitor. Edge slots centre the target on that edge; corner slots sit the
-  // target diagonally outside the corner. Hyprland's auto-* positions only
-  // cover the edges and align rather than centre, so these are explicit
-  // logical-pixel positions computed from the sizes the compositor reports.
-
-  function applySlot(id) {
-    if (!state || !target || !reference) return
-    var tw = state.logicalW(target)
-    var th = state.logicalH(target)
-    var ow = state.logicalW(reference)
-    var oh = state.logicalH(reference)
-    var x = reference.x
-    var y = reference.y
-    if (id.indexOf("e") >= 0) x = reference.x + ow
-    else if (id.indexOf("w") >= 0) x = reference.x - tw
-    else x = reference.x + Math.round((ow - tw) / 2)
-    if (id.indexOf("n") >= 0) y = reference.y - th
-    else if (id.indexOf("s") >= 0) y = reference.y + oh
-    else y = reference.y + Math.round((oh - th) / 2)
-    state.moveTo(target.name, x, y)
-  }
-
-  // Which slot the target currently occupies, so the clicked one stays lit.
-  // Matched by side rather than by pixels: an auto-right position is aligned
-  // to the top edge, while the slot is centred, and both are the same answer.
-  function currentSlot() {
-    var t = target
-    var o = reference
-    if (!t || !o) return ""
-    var tw = state.logicalW(t)
-    var th = state.logicalH(t)
-    var ow = state.logicalW(o)
-    var oh = state.logicalH(o)
-    var h = t.x >= o.x + ow - 1 ? "e" : (t.x + tw <= o.x + 1 ? "w" : "")
-    var v = t.y >= o.y + oh - 1 ? "s" : (t.y + th <= o.y + 1 ? "n" : "")
-    if (h && v) return v + h
-    return h || v
-  }
 
   // The host injects `state` after the page instance exists, so this is the
   // reliable moment to re-read: the page can open long after the last poll.
@@ -279,32 +237,34 @@ Item {
 
     Rule { }
 
-    // ---- layout preview with the eight placement slots ----
+    // ---- layout preview, free drag with guides ----
     Head {
       glyph: "▭"
       title: "Layout"
-      value: page.state ? String(page.state.enabledMonitors.length) : "0"
+      value: page.state ? String(page.state.layoutMonitors.length) : "0"
       gap: Style.space(4)
     }
 
     Item {
       id: canvas
       width: parent.width
-      // Tall enough that a drag resolves to a useful number of logical
-      // pixels: the scale is set by the shortest axis, so a squat preview
-      // quantises position to ~30 logical px per screen pixel.
       height: Style.space(160)
 
-      // True while a monitor is being dragged. Position bindings step aside
-      // for the drag, then come back once Hyprland reports where the monitor
-      // actually landed.
-      property bool dragging: false
-
       readonly property var list: page.state ? page.state.layoutMonitors : []
-      readonly property real slotSize: Style.space(14)
-      readonly property real slotGap: Style.space(4)
-      readonly property real margin: slotSize + slotGap
+      readonly property real pad: Style.space(4)
 
+      // Snap distances, in screen pixels. An edge connection is generous, a
+      // corner is tighter, and a centre line is tighter still: on displays
+      // of different sizes the centre can sit close to an edge, and it must
+      // not steal an edge connection.
+      readonly property real edgeSnapPx: 12
+      readonly property real cornerSnapPx: 8
+      readonly property real centreSnapPx: 5
+      readonly property real holdFactor: 1.5
+      readonly property int holdMs: 160
+      readonly property real minOverlap: 32
+
+      // ---- world bounds and transform ----
       readonly property real minX: {
         var v = 0; var first = true
         for (var i = 0; i < list.length; i++) { if (first || list[i].x < v) { v = list[i].x; first = false } }
@@ -328,120 +288,402 @@ Item {
         return Math.max(1, maxY - minY)
       }
 
-      readonly property real availW: Math.max(1, width - 2 * margin)
-      readonly property real availH: Math.max(1, height - 2 * margin)
-      readonly property real fit: Math.min(availW / spanW, availH / spanH)
-      readonly property real offsetX: margin + (availW - spanW * fit) / 2
-      readonly property real offsetY: margin + (availH - spanH * fit) / 2
+      // The panel is narrow, so half a display of room on each side is the
+      // compromise: enough to pull a display clear of the arrangement in any
+      // direction, without shrinking the preview to the point where a drag
+      // cannot be aimed.
+      readonly property real maxW: {
+        var v = 1
+        for (var i = 0; i < list.length; i++) v = Math.max(v, page.state.logicalW(list[i]))
+        return v
+      }
+      readonly property real maxH: {
+        var v = 1
+        for (var i = 0; i < list.length; i++) v = Math.max(v, page.state.logicalH(list[i]))
+        return v
+      }
+      readonly property real worldW: spanW + maxW
+      readonly property real worldH: spanH + maxH
 
-      function rectFor(m) {
-        if (!m) return null
-        return Qt.rect(offsetX + (m.x - minX) * fit,
-                       offsetY + (m.y - minY) * fit,
-                       Math.max(16, page.state.logicalW(m) * fit),
-                       Math.max(12, page.state.logicalH(m) * fit))
+      readonly property real availW: Math.max(1, width - 2 * pad)
+      readonly property real availH: Math.max(1, height - 2 * pad)
+      readonly property real fit: Math.max(0.0001, Math.min(availW / worldW, availH / worldH))
+      readonly property real offsetX: (width - spanW * fit) / 2
+      readonly property real offsetY: (height - spanH * fit) / 2
+
+      function canvasX(wx) { return offsetX + (wx - minX) * fit }
+      function canvasY(wy) { return offsetY + (wy - minY) * fit }
+      function worldX(cx) { return (cx - offsetX) / fit + minX }
+      function worldY(cy) { return (cy - offsetY) / fit + minY }
+
+      // ---- drag state ----
+      property bool dragging: false
+      property string dragName: ""
+      property var dragItem: null
+      property bool moved: false
+      property real startItemX: 0
+      property real startItemY: 0
+      property real freeX: 0
+      property real freeY: 0
+      property real dropX: 0
+      property real dropY: 0
+
+      // ---- snap state ----
+      property bool locked: false
+      property var lockedSnap: null
+      property real outSince: 0
+      property bool hasGuideX: false
+      property bool hasGuideY: false
+      property real guideX: 0
+      property real guideY: 0
+      property string statusText: "Drag a display"
+      property string statusCoords: ""
+      property string invalidText: ""
+
+      Timer {
+        id: graceTimer
+        interval: canvas.holdMs + 30
+        onTriggered: canvas.releaseHeld()
       }
 
-      readonly property var refRect: page.reference ? rectFor(page.reference) : null
-
-      function slotRect(id) {
-        var r = refRect
-        if (!r) return Qt.rect(0, 0, 0, 0)
-        var s = slotSize
-        var g = slotGap
-        var x = r.x + (r.width - s) / 2
-        var y = r.y + (r.height - s) / 2
-        if (id.indexOf("e") >= 0) x = r.x + r.width + g
-        else if (id.indexOf("w") >= 0) x = r.x - s - g
-        if (id.indexOf("n") >= 0) y = r.y - s - g
-        else if (id.indexOf("s") >= 0) y = r.y + r.height + g
-        return Qt.rect(x, y, s, s)
-      }
-
-      // A slot that a monitor already occupies is not an offer: that screen
-      // is there. Monitor rectangles are translucent, so the slot would show
-      // through and read as a button inside the screen.
-      function slotCovered(id) {
-        var s = slotRect(id)
-        for (var i = 0; i < list.length; i++) {
-          var r = rectFor(list[i])
-          if (!r) continue
-          if (s.x < r.x + r.width && s.x + s.width > r.x
-              && s.y < r.y + r.height && s.y + s.height > r.y)
-            return true
-        }
-        return false
-      }
-
-      // ------------------------------------------------------ free placement
-
-      function logicalFromCanvas(x, y) {
-        return {
-          x: (x - offsetX) / fit + minX,
-          y: (y - offsetY) / fit + minY
-        }
-      }
-
-      // Snap a dropped coordinate to any edge or centre line of another
-      // monitor, within a threshold measured in screen pixels so it feels the
-      // same at every zoom. Anything else stays exactly where it was dropped.
-      function snapTo(v, candidates, threshold) {
-        var best = v
-        var bestD = threshold
-        for (var i = 0; i < candidates.length; i++) {
-          var d = Math.abs(candidates[i] - v)
-          if (d < bestD) { bestD = d; best = candidates[i] }
-        }
-        return best
-      }
-
-      function snapPosition(name, lx, ly) {
-        var t = page.state.byName(name)
-        if (!t) return { x: lx, y: ly }
-        var tw = page.state.logicalW(t)
-        var th = page.state.logicalH(t)
-        var xs = []
-        var ys = []
-        for (var i = 0; i < list.length; i++) {
-          var o = list[i]
-          if (o.name === name) continue
-          var ow = page.state.logicalW(o)
-          var oh = page.state.logicalH(o)
-          // left edges, touching, centred, right edges, in both directions
-          xs.push(o.x, o.x + ow, o.x - tw, o.x + ow - tw,
-                  o.x + Math.round((ow - tw) / 2))
-          ys.push(o.y, o.y + oh, o.y - th, o.y + oh - th,
-                  o.y + Math.round((oh - th) / 2))
-        }
-        var threshold = 8 / fit
-        return { x: snapTo(lx, xs, threshold), y: snapTo(ly, ys, threshold) }
-      }
-
-      // Hyprland *accepts* overlapping outputs at runtime (verified: a rule
-      // placing eDP-1 at 960x0 over DP-1 at 0x0 was applied as given), so
-      // this is a warning, not a refusal. An overlap hides part of a screen;
-      // flagging it before the drop makes that a choice rather than a
-      // surprise after the arrangement has already changed.
-      function overlaps(name, x, y, w, h) {
-        for (var i = 0; i < list.length; i++) {
-          var o = list[i]
-          if (o.name === name) continue
-          var r = rectFor(o)
-          if (!r) continue
-          if (x < r.x + r.width - 1 && x + w > r.x + 1
-              && y < r.y + r.height - 1 && y + h > r.y + 1)
-            return true
-        }
-        return false
-      }
-
-      // The drop is applied with hyprctl, then re-read. Keep the item where
-      // the user let go until that round trip is done, so it never snaps back
-      // to the old position for a frame.
       Timer {
         id: settleDrag
         interval: 1100
-        onTriggered: canvas.dragging = false
+        onTriggered: {
+          canvas.dragging = false
+          canvas.locked = false
+          canvas.lockedSnap = null
+          canvas.outSince = 0
+        }
+      }
+
+      onListChanged: canvas.refreshValidity("", 0, 0)
+
+      // ------------------------------------------------------ snap geometry
+
+      function rectsOverlap(a, b) {
+        return Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 1 &&
+               Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 1
+      }
+
+      function touches(a, b) {
+        var xo = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)
+        var yo = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)
+        var vertical = (Math.abs(a.x + a.w - b.x) < 1 || Math.abs(b.x + b.w - a.x) < 1) && yo > 1
+        var horizontal = (Math.abs(a.y + a.h - b.y) < 1 || Math.abs(b.y + b.h - a.y) < 1) && xo > 1
+        var corner = (Math.abs(a.x + a.w - b.x) < 1 || Math.abs(b.x + b.w - a.x) < 1) &&
+                     (Math.abs(a.y + a.h - b.y) < 1 || Math.abs(b.y + b.h - a.y) < 1)
+        return vertical || horizontal || corner
+      }
+
+      function overlapsAt(name, x, y) {
+        var w = 0
+        var h = 0
+        for (var i = 0; i < list.length; i++) {
+          if (list[i].name === name) {
+            w = page.state.logicalW(list[i])
+            h = page.state.logicalH(list[i])
+            break
+          }
+        }
+        if (w === 0) return false
+        for (var j = 0; j < list.length; j++) {
+          var o = list[j]
+          if (o.name === name) continue
+          if (rectsOverlap({ x: x, y: y, w: w, h: h },
+                           { x: o.x, y: o.y, w: page.state.logicalW(o), h: page.state.logicalH(o) }))
+            return true
+        }
+        return false
+      }
+
+      function refreshValidity(dragName, dx, dy) {
+        var rects = []
+        for (var i = 0; i < list.length; i++) {
+          var m = list[i]
+          rects.push({
+            name: m.name,
+            x: (dragName !== "" && m.name === dragName) ? dx : m.x,
+            y: (dragName !== "" && m.name === dragName) ? dy : m.y,
+            w: page.state.logicalW(m),
+            h: page.state.logicalH(m)
+          })
+        }
+        var issues = []
+        for (var a = 0; a < rects.length; a++)
+          for (var b = a + 1; b < rects.length; b++)
+            if (rectsOverlap(rects[a], rects[b]))
+              issues.push(rects[a].name + " overlaps " + rects[b].name)
+        if (rects.length > 1) {
+          for (var k = 0; k < rects.length; k++) {
+            var attached = false
+            for (var j = 0; j < rects.length; j++)
+              if (j !== k && touches(rects[k], rects[j])) { attached = true; break }
+            if (!attached) issues.push(rects[k].name + " is not touching any display")
+          }
+        }
+        invalidText = issues.join(" · ")
+      }
+
+      // ------------------------------------------------------ candidates
+      //
+      // A candidate is a complete placement relative to one other display,
+      // not an independent per-axis rule. A snap therefore always produces a
+      // touching placement. `xg`/`yg` are the guide lines to draw, or null.
+
+      function cand(x, y, xg, yg, xType, yType, other) {
+        return { x: x, y: y, xg: xg, yg: yg, xType: xType, yType: yType, other: other }
+      }
+
+      function candidatesFor(D, O, freeX, freeY) {
+        var out = []
+        var dw = page.state.logicalW(D)
+        var dh = page.state.logicalH(D)
+        var ow = page.state.logicalW(O)
+        var oh = page.state.logicalH(O)
+
+        var yAligned = [
+          [O.y, O.y, "top edges"],
+          [O.y + oh - dh, O.y + oh, "bottom edges"],
+          [O.y + (oh - dh) / 2, O.y + oh / 2, "centred"]
+        ]
+        var xAligned = [
+          [O.x, O.x, "left edges"],
+          [O.x + ow - dw, O.x + ow, "right edges"],
+          [O.x + (ow - dw) / 2, O.x + ow / 2, "centred"]
+        ]
+        var yOverlaps = freeY < O.y + oh && freeY + dh > O.y
+        var xOverlaps = freeX < O.x + ow && freeX + dw > O.x
+
+        for (var i = 0; i < yAligned.length; i++) {
+          var ya = yAligned[i]
+          out.push(cand(O.x + ow, ya[0], O.x + ow, ya[1], "flush right", ya[2], O.name))
+          out.push(cand(O.x - dw, ya[0], O.x, ya[1], "flush left", ya[2], O.name))
+        }
+        if (yOverlaps) {
+          out.push(cand(O.x + ow, freeY, O.x + ow, null, "flush right", null, O.name))
+          out.push(cand(O.x - dw, freeY, O.x, null, "flush left", null, O.name))
+        } else if (freeY >= O.y + oh || freeY + dh <= O.y) {
+          // Just past either end of the edge: clamp into a minimum overlap,
+          // so the connection is still an edge with length, not a point.
+          var yPast = freeY >= O.y + oh
+            ? O.y + oh - minOverlap
+            : O.y - dh + minOverlap
+          out.push(cand(O.x + ow, yPast, O.x + ow, null, "flush right", null, O.name))
+          out.push(cand(O.x - dw, yPast, O.x, null, "flush left", null, O.name))
+        }
+
+        for (var j = 0; j < xAligned.length; j++) {
+          var xa = xAligned[j]
+          out.push(cand(xa[0], O.y + oh, xa[1], O.y + oh, xa[2], "flush below", O.name))
+          out.push(cand(xa[0], O.y - dh, xa[1], O.y, xa[2], "flush above", O.name))
+        }
+        if (xOverlaps) {
+          out.push(cand(freeX, O.y + oh, null, O.y + oh, null, "flush below", O.name))
+          out.push(cand(freeX, O.y - dh, null, O.y, null, "flush above", O.name))
+        } else if (freeX >= O.x + ow || freeX + dw <= O.x) {
+          var xPast = freeX >= O.x + ow
+            ? O.x + ow - minOverlap
+            : O.x - dw + minOverlap
+          out.push(cand(xPast, O.y + oh, null, O.y + oh, null, "flush below", O.name))
+          out.push(cand(xPast, O.y - dh, null, O.y, null, "flush above", O.name))
+        }
+
+        // Corner to corner: both edges flush, corners meet at a point.
+        out.push(cand(O.x + ow, O.y + oh, O.x + ow, O.y + oh,
+                      "flush right", "flush below", O.name))
+        out.push(cand(O.x - dw, O.y + oh, O.x, O.y + oh,
+                      "flush left", "flush below", O.name))
+        out.push(cand(O.x + ow, O.y - dh, O.x + ow, O.y,
+                      "flush right", "flush above", O.name))
+        out.push(cand(O.x - dw, O.y - dh, O.x, O.y,
+                      "flush left", "flush above", O.name))
+
+        return out
+      }
+
+      function limitsFor(c, factor) {
+        var e = edgeSnapPx * factor / fit
+        var k = cornerSnapPx * factor / fit
+        var m = centreSnapPx * factor / fit
+        if (c.xg !== null && c.yg !== null) {
+          if (c.xType === "centred" || c.yType === "centred") {
+            return {
+              x: (c.xType === "centred" ? m : e),
+              y: (c.yType === "centred" ? m : e)
+            }
+          }
+          return { x: k, y: k }
+        }
+        return { x: e, y: e }
+      }
+
+      function isCorner(c) {
+        return c.xg !== null && c.yg !== null &&
+               c.xType !== "centred" && c.yType !== "centred"
+      }
+
+      function bestCandidate(D, freeX, freeY, factor) {
+        var dw = page.state.logicalW(D)
+        var dh = page.state.logicalH(D)
+        var near = []
+        for (var i = 0; i < list.length; i++) {
+          var O = list[i]
+          if (O.name === D.name) continue
+          var cs = candidatesFor(D, O, freeX, freeY)
+          for (var j = 0; j < cs.length; j++) {
+            var c = cs[j]
+            var lim = limitsFor(c, factor)
+            if (Math.abs(c.x - freeX) <= lim.x && Math.abs(c.y - freeY) <= lim.y)
+              near.push(c)
+          }
+        }
+
+        // Prefer placements that latch both axes (a corner), then the closest.
+        near.sort(function(a, b) {
+          var sa = (a.xg !== null ? 1 : 0) + (a.yg !== null ? 1 : 0)
+          var sb = (b.xg !== null ? 1 : 0) + (b.yg !== null ? 1 : 0)
+          if (sa !== sb) return sb - sa
+          return (Math.abs(a.x - freeX) + Math.abs(a.y - freeY)) -
+                 (Math.abs(b.x - freeX) + Math.abs(b.y - freeY))
+        })
+
+        for (var k = 0; k < near.length; k++) {
+          var cc = near[k]
+          var hits = false
+          for (var q = 0; q < list.length; q++) {
+            var oo = list[q]
+            if (oo.name === D.name) continue
+            if (rectsOverlap({ x: cc.x, y: cc.y, w: dw, h: dh },
+                             { x: oo.x, y: oo.y, w: page.state.logicalW(oo), h: page.state.logicalH(oo) })) {
+              hits = true
+              break
+            }
+          }
+          if (!hits) return cc
+        }
+        return null
+      }
+
+      function freeResult(x, y) {
+        return { x: x, y: y, xg: null, yg: null, xType: null, yType: null, other: "" }
+      }
+
+      // Acquire at the normal limits. While held, re-evaluate at the wider
+      // release limits so the free axis still follows the pointer. A quick
+      // excursion outside even that is a shake, not a release, until it has
+      // lasted `holdMs`.
+      function computeSnap(D, freeX, freeY) {
+        var res = bestCandidate(D, freeX, freeY, 1)
+        if (res) {
+          lockedSnap = res
+          locked = true
+          outSince = 0
+          graceTimer.stop()
+          return res
+        }
+        if (locked && lockedSnap) {
+          res = bestCandidate(D, freeX, freeY, holdFactor)
+          if (res) {
+            lockedSnap = res
+            outSince = 0
+            graceTimer.stop()
+            return res
+          }
+          var now = Date.now()
+          if (outSince === 0) outSince = now
+          if (now - outSince < holdMs) {
+            graceTimer.restart()
+            return lockedSnap
+          }
+          locked = false
+          outSince = 0
+          lockedSnap = null
+          graceTimer.stop()
+        }
+        return freeResult(freeX, freeY)
+      }
+
+      function releaseHeld() {
+        if (!locked || !dragging || !dragItem) return
+        if (outSince === 0 || Date.now() - outSince < holdMs) return
+        dragItem.x = canvasX(freeX)
+        dragItem.y = canvasY(freeY)
+        dropX = freeX
+        dropY = freeY
+        locked = false
+        outSince = 0
+        lockedSnap = null
+        hasGuideX = false
+        hasGuideY = false
+        statusText = "free position"
+        statusCoords = Math.round(freeX) + ", " + Math.round(freeY)
+        refreshValidity(dragName, freeX, freeY)
+      }
+
+      function applySnap(res) {
+        hasGuideX = res.xg !== null
+        hasGuideY = res.yg !== null
+        if (hasGuideX) guideX = canvasX(res.xg)
+        if (hasGuideY) guideY = canvasY(res.yg)
+
+        var parts = []
+        if (res.xType) parts.push(res.xType + " → " + res.other)
+        if (res.yType) parts.push(res.yType + " → " + res.other)
+        var corner = isCorner(res)
+        statusText = corner
+          ? "corner · " + parts.join(" · ")
+          : (parts.length ? "snapped · " + parts.join(" · ") : "free position")
+        statusCoords = Math.round(res.x) + ", " + Math.round(res.y)
+      }
+
+      function beginDrag(m, item) {
+        // A previous drop is still holding its bindings off for a moment;
+        // a new drag must cancel that or it would switch dragging off under
+        // the pointer mid-drag.
+        settleDrag.stop()
+        dragging = true
+        dragName = m.name
+        dragItem = item
+        moved = false
+        locked = false
+        lockedSnap = null
+        outSince = 0
+        hasGuideX = false
+        hasGuideY = false
+        graceTimer.stop()
+      }
+
+      function moveDrag(m, item) {
+        if (Math.abs(item.x - startItemX) > 2 || Math.abs(item.y - startItemY) > 2)
+          moved = true
+        freeX = worldX(item.x)
+        freeY = worldY(item.y)
+        var res = computeSnap(m, freeX, freeY)
+        dropX = res.x
+        dropY = res.y
+        item.x = canvasX(res.x)
+        item.y = canvasY(res.y)
+        applySnap(res)
+        refreshValidity(m.name, res.x, res.y)
+      }
+
+      function endDrag(m) {
+        graceTimer.stop()
+        if (!moved) {
+          dragging = false
+          dragItem = null
+          dragName = ""
+          hasGuideX = false
+          hasGuideY = false
+          return
+        }
+        page.state.moveTo(m.name, dropX, dropY)
+        dragItem = null
+        dragName = ""
+        hasGuideX = false
+        hasGuideY = false
+        settleDrag.restart()
       }
 
       Rectangle {
@@ -459,27 +701,25 @@ Item {
           required property var modelData
 
           readonly property bool current: page.target && modelData.name === page.target.name
+          readonly property bool overlapping: canvas.dragging && canvas.dragName === modelData.name
+            ? canvas.overlapsAt(modelData.name, canvas.dropX, canvas.dropY)
+            : false
 
-          // The dragged screen is the one that must be readable while it
-          // moves, and it must also sit above the others when dropped on them.
           z: dragArea.drag.active ? 3 : 1
 
-          readonly property bool overlapping: canvas.dragging
-            && canvas.overlaps(modelData.name, mon.x, mon.y, mon.width, mon.height)
-
-          // x and y are owned by a Binding, not by a plain binding: during a
-          // drag the Binding is switched off and the drag writes x/y directly,
-          // which an ordinary binding would overwrite on the next re-evaluate.
+          // x and y are owned by a Binding, not a plain binding: during a
+          // drag the Binding is off and the drag writes x/y directly, which
+          // an ordinary binding would overwrite on the next re-evaluate.
           Binding {
             target: mon
             property: "x"
-            value: canvas.offsetX + (modelData.x - canvas.minX) * canvas.fit
+            value: canvas.canvasX(modelData.x)
             when: !canvas.dragging
           }
           Binding {
             target: mon
             property: "y"
-            value: canvas.offsetY + (modelData.y - canvas.minY) * canvas.fit
+            value: canvas.canvasY(modelData.y)
             when: !canvas.dragging
           }
 
@@ -520,93 +760,102 @@ Item {
             drag.minimumY: 0
             drag.maximumY: Math.max(0, canvas.height - mon.height)
 
-            property real startX: 0
-            property real startY: 0
-            property bool moved: false
-
             onPressed: {
-              settleDrag.stop()
-              startX = mon.x
-              startY = mon.y
-              moved = false
-              canvas.dragging = true
+              canvas.startItemX = mon.x
+              canvas.startItemY = mon.y
+              canvas.beginDrag(modelData, mon)
               page.select(modelData.name)
             }
 
             onPositionChanged: {
-              if (pressed && (Math.abs(mon.x - startX) > 2 || Math.abs(mon.y - startY) > 2))
-                moved = true
+              if (pressed) canvas.moveDrag(modelData, mon)
             }
 
-            onReleased: {
-              if (!moved) {
-                canvas.dragging = false
-                return
-              }
-              var p = canvas.logicalFromCanvas(mon.x, mon.y)
-              var s = canvas.snapPosition(modelData.name, p.x, p.y)
-              page.state.moveTo(modelData.name, s.x, s.y)
-              settleDrag.restart()
-            }
+            onReleased: canvas.endDrag(modelData)
           }
         }
       }
 
-      Repeater {
-        model: ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
-
-        delegate: Rectangle {
-          id: slot
-          required property string modelData
-
-          readonly property var r: canvas.slotRect(modelData)
-          readonly property bool current: page.currentSlot() === modelData
-          property bool hovered: false
-
-          visible: canvas.refRect !== null && !canvas.dragging
-            && !canvas.slotCovered(modelData)
-          x: r.x
-          y: r.y
-          width: r.width
-          height: r.height
-          radius: Style.cornerRadius
-          color: current
-            ? Util.alpha(Color.accent, Style.selectedFillAlpha)
-            : (hovered ? Util.alpha(Color.accent, 0.12) : Util.alpha(Color.foreground, 0.03))
-          border.width: 1
-          border.color: current || hovered
-            ? Util.alpha(Color.accent, 0.6)
-            : Util.alpha(Color.foreground, 0.22)
-
-          Text {
-            anchors.centerIn: parent
-            text: "+"
-            color: slot.current ? Color.accent : Util.alpha(Color.foreground, 0.45)
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-          }
-
-          MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onEntered: slot.hovered = true
-            onExited: slot.hovered = false
-            onClicked: page.applySlot(slot.modelData)
-          }
-        }
+      // Guides are drawn above the displays. The marker is where the two
+      // alignment lines cross, which is the corner or centre that latched.
+      Rectangle {
+        visible: canvas.hasGuideX
+        x: canvas.guideX
+        y: 0
+        width: 1
+        height: canvas.height
+        color: Util.alpha(Color.accent, 0.9)
+        z: 5
+      }
+      Rectangle {
+        visible: canvas.hasGuideY
+        x: 0
+        y: canvas.guideY
+        width: canvas.width
+        height: 1
+        color: Util.alpha(Color.accent, 0.9)
+        z: 5
+      }
+      Rectangle {
+        visible: canvas.hasGuideX && canvas.hasGuideY
+        x: canvas.guideX - Style.space(3)
+        y: canvas.guideY - Style.space(3)
+        width: Style.space(6)
+        height: Style.space(6)
+        color: Color.accent
+        z: 6
       }
     }
 
-    Caps {
+    // ---- invalid layout ----
+    Rectangle {
+      width: parent.width
+      height: canvas.invalidText !== "" ? Style.space(26) : 0
+      visible: canvas.invalidText !== ""
+      color: Util.alpha(Color.urgent, 0.08)
+
+      Text {
+        anchors.fill: parent
+        anchors.leftMargin: Style.space(8)
+        anchors.rightMargin: Style.space(8)
+        verticalAlignment: Text.AlignVCenter
+        text: "Invalid layout · " + canvas.invalidText
+        color: Color.urgent
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideRight
+      }
+    }
+
+    // ---- drag status ----
+    Item {
       width: parent.width
       height: Style.space(16)
-      visible: page.others.length > 0
-      horizontalAlignment: Text.AlignHCenter
-      text: page.target ? ("Drag a display, or click a box") : ""
+      visible: page.state ? page.state.layoutMonitors.length > 1 : false
+
+      Text {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.rightMargin: Style.space(70)
+        anchors.verticalCenter: parent.verticalCenter
+        text: canvas.statusText
+        color: Util.alpha(Color.foreground, 0.45)
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideRight
+      }
+
+      Text {
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        text: canvas.statusCoords
+        color: Util.alpha(Color.foreground, 0.4)
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
     }
 
-    // ---- every display: pick one to arrange, switch one off ----
+    // ---- every display: pick one, switch one off ----
     Head {
       glyph: "☰"
       title: "Displays"

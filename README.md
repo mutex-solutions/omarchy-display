@@ -28,16 +28,25 @@ omarchy plugin add https://github.com/mutex-solutions/omarchy-display
 ## What the page does
 
 - **Layout** draws every enabled monitor to scale, placed the way Hyprland has
-  them. **Drag any display freely**: the drop is applied as an exact position,
-  and it snaps to another screen's edges and centre lines when the pointer is
-  within about 8 screen pixels of them, so both "anywhere" and "flush" are
-  easy. A screen that overlaps another turns the urgent colour while it is
-  dragged, because an overlap hides part of a display; Hyprland accepts it, so
-  the drop still applies. A click without movement selects the screen.
-- **Eight placement boxes** sit around the reference monitor: the four edges
-  (centred) and the four corners, for exact presets. Click a box to put the
-  selected monitor there. A box a monitor already occupies is not drawn,
-  because that place is taken.
+  them, with room on every side to pull a display clear of the others.
+  **Drag any display freely**; the drop is applied as an exact logical-pixel
+  position.
+- **Snapping** uses complete placements relative to the other displays, so a
+  snap always produces a placement that touches:
+  - edge to edge: within **12 screen px**
+  - corner to corner: within **8 px**, including the diagonal where two
+    corners meet
+  - centre line: within **5 px**
+  A held snap survives a brief excursion past those distances (1.5× for
+  **160 ms**), so a shaky hand does not knock it loose. A quick shake never
+  releases; a deliberate drag away does.
+- **Guides** draw at the matched edge or centre line, with a marker where the
+  two lines cross. The status row names the pair and shows the exact
+  coordinates.
+- **Invalid layout**: every display must share an edge or corner with another
+  display, and an overlap is invalid too. The drop still applies (Hyprland
+  accepts gaps and overlaps), but a red strip says what is wrong, and the
+  offending display is outlined while it is dragged.
 - **Displays** lists every output with its mode and refresh rate. Pick one to
   arrange; the switch turns an output on or off.
 - **Mirror** shows the target on the first other enabled monitor.
@@ -52,10 +61,9 @@ omarchy plugin add https://github.com/mutex-solutions/omarchy-display
 
 Positions are in **scaled logical pixels**: a 3840×2160 panel at scale 2
 occupies 1920×1080 in the layout, which is exactly what Hyprland expects.
-Edge boxes centre the target on that edge; corner boxes sit it diagonally
-outside the corner. Hyprland's own `auto-*` positions only cover the edges and
-align rather than centre, so the eight boxes are computed as explicit
-positions from the sizes the compositor reports.
+The preview fits the arrangement with half a display of room on each side.
+The panel is narrow, so that is the balance between drag room and a preview
+that can still be aimed; there is no zoom control.
 
 Hyprland has no "primary output" in the X11 sense: there is no flag to mark
 one monitor as primary. What decides where new windows appear is the workspace
