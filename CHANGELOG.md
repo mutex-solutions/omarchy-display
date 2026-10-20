@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.8
+
+Zoom, and exact proportions.
+
+- **Wheel over the preview to zoom**, about the pointer. The `−` / `+` chips
+  zoom about the centre. **Fit** resets zoom and pan.
+- One `scale` now drives the transform, the rectangle sizes and the snap
+  limits. Previously the drawn rectangles had a 16x12 px floor, so at small
+  scales the visual edges no longer matched the logical positions the snap
+  and guides used. That was the inaccurate snapping and wrong-looking
+  proportions.
+- Zoom is clamped to 0.25x .. 6x.
+
 ## 0.3.7
 
 Staged edits and a draggable preview.

@@ -347,20 +347,43 @@ Item {
 
       readonly property real availW: Math.max(1, width - 2 * pad)
       readonly property real availH: Math.max(1, height - 2 * pad)
+      // fit is the zoom that shows the whole arrangement with its margins.
+      // scale is what is actually drawn, and it is the only value the
+      // transform, the rectangle sizes and the snap distances use.
       readonly property real fit: Math.max(0.0001, Math.min(availW / worldW, availH / worldH))
-      readonly property real offsetX: (width - spanW * fit) / 2
-      readonly property real offsetY: (height - spanH * fit) / 2
+      property real zoom: 1
+      readonly property real scale: Math.max(0.0001, fit * zoom)
+      readonly property real offsetX: (width - spanW * scale) / 2
+      readonly property real offsetY: (height - spanH * scale) / 2
 
-      function canvasX(wx) { return offsetX + basePanX + overflowX + (wx - minX) * fit }
-      function canvasY(wy) { return offsetY + basePanY + overflowY + (wy - minY) * fit }
-      function worldX(cx) { return (cx - offsetX - basePanX - overflowX) / fit + minX }
-      function worldY(cy) { return (cy - offsetY - basePanY - overflowY) / fit + minY }
+      function canvasX(wx) { return offsetX + basePanX + overflowX + (wx - minX) * scale }
+      function canvasY(wy) { return offsetY + basePanY + overflowY + (wy - minY) * scale }
+      function worldX(cx) { return (cx - offsetX - basePanX - overflowX) / scale + minX }
+      function worldY(cy) { return (cy - offsetY - basePanY - overflowY) / scale + minY }
 
       readonly property bool panned: Math.abs(basePanX) > 0.5 || Math.abs(basePanY) > 0.5
 
-      function resetPan() {
+      function resetView() {
+        zoom = 1
         basePanX = 0
         basePanY = 0
+        overflowX = 0
+        overflowY = 0
+      }
+
+      // Zoom about a point in canvas coordinates, so the display under the
+      // pointer stays under it.
+      function zoomAt(factor, px, py) {
+        var nz = Math.max(0.25, Math.min(6, zoom * factor))
+        if (Math.abs(nz - zoom) < 0.0001) return
+        var wx = worldX(px)
+        var wy = worldY(py)
+        var ns = fit * nz
+        var nox = (width - spanW * ns) / 2
+        var noy = (height - spanH * ns) / 2
+        basePanX = px - nox - (wx - minX) * ns
+        basePanY = py - noy - (wy - minY) * ns
+        zoom = nz
         overflowX = 0
         overflowY = 0
       }
@@ -623,9 +646,9 @@ Item {
       }
 
       function limitsFor(c, factor) {
-        var e = edgeSnapPx * factor / fit
-        var k = cornerSnapPx * factor / fit
-        var m = centreSnapPx * factor / fit
+        var e = edgeSnapPx * factor / scale
+        var k = cornerSnapPx * factor / scale
+        var m = centreSnapPx * factor / scale
         if (c.xg !== null && c.yg !== null) {
           if (c.xType === "centred" || c.yType === "centred") {
             return {
@@ -828,6 +851,14 @@ Item {
         settleDrag.restart()
       }
 
+      WheelHandler {
+        onWheel: function(event) {
+          if (canvas.dragging) return
+          canvas.zoomAt(event.angleDelta.y > 0 ? 1.15 : 1 / 1.15, event.x, event.y)
+          event.accepted = true
+        }
+      }
+
       Rectangle {
         anchors.fill: parent
         color: Util.alpha(Color.foreground, 0.03)
@@ -900,8 +931,8 @@ Item {
             restoreMode: Binding.RestoreNone
           }
 
-          width: Math.max(16, page.state.logicalW(modelData) * canvas.fit)
-          height: Math.max(12, page.state.logicalH(modelData) * canvas.fit)
+          width: Math.max(1, page.state.logicalW(modelData) * canvas.scale)
+          height: Math.max(1, page.state.logicalH(modelData) * canvas.scale)
           radius: Style.cornerRadius
           color: overlapping
             ? Util.alpha(Color.urgent, 0.14)
@@ -1045,7 +1076,6 @@ Item {
       width: parent.width
       height: Style.space(26)
       spacing: Style.space(6)
-      visible: page.pendingCount > 0 || canvas.panned
 
       Chip {
         visible: page.pendingCount > 0
@@ -1061,9 +1091,17 @@ Item {
         }
       }
       Chip {
-        visible: canvas.panned
+        visible: canvas.panned || canvas.zoom !== 1
         label: "Fit"
-        onPicked: canvas.resetPan()
+        onPicked: canvas.resetView()
+      }
+      Chip {
+        label: "−"
+        onPicked: canvas.zoomAt(1 / 1.15, canvas.width / 2, canvas.height / 2)
+      }
+      Chip {
+        label: "+"
+        onPicked: canvas.zoomAt(1.15, canvas.width / 2, canvas.height / 2)
       }
     }
 

@@ -35,6 +35,11 @@ omarchy plugin add https://github.com/mutex-solutions/omarchy-display
 - **Drag the empty part of the preview to pan it.** A display dragged past an
   edge pans the view automatically, so snap positions outside the fitted view
   are still reachable.
+- **Zoom with the wheel over the preview**, or with the `−` / `+` chips. The
+  wheel zooms about the pointer; the chips zoom about the centre. **Fit**
+  resets both zoom and pan. One scale drives the transform, the drawn
+  rectangles and the snap distances, so the guides and the screen edges agree
+  at every zoom.
 - **Snapping** uses complete placements relative to the other displays, so a
   snap always produces a placement that touches:
   - edge to edge: within **12 screen px**
