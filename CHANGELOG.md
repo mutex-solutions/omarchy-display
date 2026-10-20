@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.12
+
+- The standalone panel's scrollbar is hidden. It overlaid the right edge of
+  the page and blocked the controls there. Wheel and touch scrolling remain.
+
 ## 0.3.11
 
 Control layout in the preview footer.

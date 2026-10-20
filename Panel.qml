@@ -54,7 +54,9 @@ Panel {
       anchors.fill: parent
       clip: true
       ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-      ScrollBar.vertical.policy: content.implicitHeight > height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+      // The scrollbar overlays the right edge of the page content and blocks
+      // the controls there. The view still scrolls by wheel and touch.
+      ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 
       Column {
         id: content
