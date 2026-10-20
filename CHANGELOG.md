@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.1
+
+Free placement.
+
+- **Drag any display** in the layout preview and drop it anywhere. The drop is
+  sent as an exact logical-pixel position, so this is not limited to the eight
+  presets.
+- Snapping: within about 8 screen pixels of another screen's edge or centre
+  line, the drop aligns to it; elsewhere it lands exactly where released.
+- A dragged screen that overlaps another is outlined in the urgent colour.
+  Hyprland accepts overlaps at runtime, so this warns rather than blocks; a
+  drop still applies.
+- The preview is taller, so a drag resolves to a finer logical position (the
+  scale is set by the shortest axis).
+- Boxes remain for exact edge and corner presets. Click-without-drag selects a
+  screen.
+- The preview no longer fights the drag: position bindings are suspended while
+  dragging and re-applied from what Hyprland reports after the round trip.
+
 ## 0.3.0
 
 Spatial placement and windows.

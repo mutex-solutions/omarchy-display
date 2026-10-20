@@ -290,7 +290,15 @@ Item {
     Item {
       id: canvas
       width: parent.width
-      height: Style.space(96)
+      // Tall enough that a drag resolves to a useful number of logical
+      // pixels: the scale is set by the shortest axis, so a squat preview
+      // quantises position to ~30 logical px per screen pixel.
+      height: Style.space(160)
+
+      // True while a monitor is being dragged. Position bindings step aside
+      // for the drag, then come back once Hyprland reports where the monitor
+      // actually landed.
+      property bool dragging: false
 
       readonly property var list: page.state ? page.state.layoutMonitors : []
       readonly property real slotSize: Style.space(14)
@@ -365,6 +373,77 @@ Item {
         return false
       }
 
+      // ------------------------------------------------------ free placement
+
+      function logicalFromCanvas(x, y) {
+        return {
+          x: (x - offsetX) / fit + minX,
+          y: (y - offsetY) / fit + minY
+        }
+      }
+
+      // Snap a dropped coordinate to any edge or centre line of another
+      // monitor, within a threshold measured in screen pixels so it feels the
+      // same at every zoom. Anything else stays exactly where it was dropped.
+      function snapTo(v, candidates, threshold) {
+        var best = v
+        var bestD = threshold
+        for (var i = 0; i < candidates.length; i++) {
+          var d = Math.abs(candidates[i] - v)
+          if (d < bestD) { bestD = d; best = candidates[i] }
+        }
+        return best
+      }
+
+      function snapPosition(name, lx, ly) {
+        var t = page.state.byName(name)
+        if (!t) return { x: lx, y: ly }
+        var tw = page.state.logicalW(t)
+        var th = page.state.logicalH(t)
+        var xs = []
+        var ys = []
+        for (var i = 0; i < list.length; i++) {
+          var o = list[i]
+          if (o.name === name) continue
+          var ow = page.state.logicalW(o)
+          var oh = page.state.logicalH(o)
+          // left edges, touching, centred, right edges, in both directions
+          xs.push(o.x, o.x + ow, o.x - tw, o.x + ow - tw,
+                  o.x + Math.round((ow - tw) / 2))
+          ys.push(o.y, o.y + oh, o.y - th, o.y + oh - th,
+                  o.y + Math.round((oh - th) / 2))
+        }
+        var threshold = 8 / fit
+        return { x: snapTo(lx, xs, threshold), y: snapTo(ly, ys, threshold) }
+      }
+
+      // Hyprland *accepts* overlapping outputs at runtime (verified: a rule
+      // placing eDP-1 at 960x0 over DP-1 at 0x0 was applied as given), so
+      // this is a warning, not a refusal. An overlap hides part of a screen;
+      // flagging it before the drop makes that a choice rather than a
+      // surprise after the arrangement has already changed.
+      function overlaps(name, x, y, w, h) {
+        for (var i = 0; i < list.length; i++) {
+          var o = list[i]
+          if (o.name === name) continue
+          var r = rectFor(o)
+          if (!r) continue
+          if (x < r.x + r.width - 1 && x + w > r.x + 1
+              && y < r.y + r.height - 1 && y + h > r.y + 1)
+            return true
+        }
+        return false
+      }
+
+      // The drop is applied with hyprctl, then re-read. Keep the item where
+      // the user let go until that round trip is done, so it never snaps back
+      // to the old position for a frame.
+      Timer {
+        id: settleDrag
+        interval: 1100
+        onTriggered: canvas.dragging = false
+      }
+
       Rectangle {
         anchors.fill: parent
         color: Util.alpha(Color.foreground, 0.03)
@@ -376,25 +455,48 @@ Item {
         model: canvas.list
 
         delegate: Rectangle {
+          id: mon
           required property var modelData
 
           readonly property bool current: page.target && modelData.name === page.target.name
 
-          // A slot can sit exactly where a monitor already is (the monitor is
-          // in that position). The monitor must win, or its rectangle looks
-          // like a button and cannot be clicked to select it.
-          z: 1
+          // The dragged screen is the one that must be readable while it
+          // moves, and it must also sit above the others when dropped on them.
+          z: dragArea.drag.active ? 3 : 1
 
-          x: canvas.offsetX + (modelData.x - canvas.minX) * canvas.fit
-          y: canvas.offsetY + (modelData.y - canvas.minY) * canvas.fit
+          readonly property bool overlapping: canvas.dragging
+            && canvas.overlaps(modelData.name, mon.x, mon.y, mon.width, mon.height)
+
+          // x and y are owned by a Binding, not by a plain binding: during a
+          // drag the Binding is switched off and the drag writes x/y directly,
+          // which an ordinary binding would overwrite on the next re-evaluate.
+          Binding {
+            target: mon
+            property: "x"
+            value: canvas.offsetX + (modelData.x - canvas.minX) * canvas.fit
+            when: !canvas.dragging
+          }
+          Binding {
+            target: mon
+            property: "y"
+            value: canvas.offsetY + (modelData.y - canvas.minY) * canvas.fit
+            when: !canvas.dragging
+          }
+
           width: Math.max(16, page.state.logicalW(modelData) * canvas.fit)
           height: Math.max(12, page.state.logicalH(modelData) * canvas.fit)
           radius: Style.cornerRadius
-          color: current
-            ? Util.alpha(Color.accent, Style.selectedFillAlpha)
-            : Util.alpha(Color.foreground, 0.06)
+          color: overlapping
+            ? Util.alpha(Color.urgent, 0.14)
+            : current
+              ? Util.alpha(Color.accent, Style.selectedFillAlpha)
+              : Util.alpha(Color.foreground, 0.06)
           border.width: 1
-          border.color: current ? Util.alpha(Color.accent, 0.55) : Util.alpha(Color.foreground, 0.25)
+          border.color: overlapping
+            ? Color.urgent
+            : current
+              ? Util.alpha(Color.accent, 0.55)
+              : Util.alpha(Color.foreground, 0.25)
 
           Text {
             anchors.centerIn: parent
@@ -408,9 +510,44 @@ Item {
           }
 
           MouseArea {
+            id: dragArea
             anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: page.select(modelData.name)
+            cursorShape: dragArea.drag.active ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+            drag.target: mon
+            drag.axis: Drag.XandYAxis
+            drag.minimumX: 0
+            drag.maximumX: Math.max(0, canvas.width - mon.width)
+            drag.minimumY: 0
+            drag.maximumY: Math.max(0, canvas.height - mon.height)
+
+            property real startX: 0
+            property real startY: 0
+            property bool moved: false
+
+            onPressed: {
+              settleDrag.stop()
+              startX = mon.x
+              startY = mon.y
+              moved = false
+              canvas.dragging = true
+              page.select(modelData.name)
+            }
+
+            onPositionChanged: {
+              if (pressed && (Math.abs(mon.x - startX) > 2 || Math.abs(mon.y - startY) > 2))
+                moved = true
+            }
+
+            onReleased: {
+              if (!moved) {
+                canvas.dragging = false
+                return
+              }
+              var p = canvas.logicalFromCanvas(mon.x, mon.y)
+              var s = canvas.snapPosition(modelData.name, p.x, p.y)
+              page.state.moveTo(modelData.name, s.x, s.y)
+              settleDrag.restart()
+            }
           }
         }
       }
@@ -426,7 +563,8 @@ Item {
           readonly property bool current: page.currentSlot() === modelData
           property bool hovered: false
 
-          visible: canvas.refRect !== null && !canvas.slotCovered(modelData)
+          visible: canvas.refRect !== null && !canvas.dragging
+            && !canvas.slotCovered(modelData)
           x: r.x
           y: r.y
           width: r.width
@@ -465,7 +603,7 @@ Item {
       height: Style.space(16)
       visible: page.others.length > 0
       horizontalAlignment: Text.AlignHCenter
-      text: page.target ? ("Place " + page.target.name + " in a box") : ""
+      text: page.target ? ("Drag a display, or click a box") : ""
     }
 
     // ---- every display: pick one to arrange, switch one off ----

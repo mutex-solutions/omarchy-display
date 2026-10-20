@@ -28,10 +28,16 @@ omarchy plugin add https://github.com/mutex-solutions/omarchy-display
 ## What the page does
 
 - **Layout** draws every enabled monitor to scale, placed the way Hyprland has
-  them, with **eight placement boxes** around the reference monitor: the four
-  edges (centred) and the four corners. Click a monitor to select it as the
-  target, then click a box to put it there. A box a monitor already occupies
-  is not drawn, because that place is taken.
+  them. **Drag any display freely**: the drop is applied as an exact position,
+  and it snaps to another screen's edges and centre lines when the pointer is
+  within about 8 screen pixels of them, so both "anywhere" and "flush" are
+  easy. A screen that overlaps another turns the urgent colour while it is
+  dragged, because an overlap hides part of a display; Hyprland accepts it, so
+  the drop still applies. A click without movement selects the screen.
+- **Eight placement boxes** sit around the reference monitor: the four edges
+  (centred) and the four corners, for exact presets. Click a box to put the
+  selected monitor there. A box a monitor already occupies is not drawn,
+  because that place is taken.
 - **Displays** lists every output with its mode and refresh rate. Pick one to
   arrange; the switch turns an output on or off.
 - **Mirror** shows the target on the first other enabled monitor.
