@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mutex-solutions.display",
   "name": "Display",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "author": "mutex-solutions",
   "license": "MIT",
   "description": "Monitor arrangement, mirroring, window moves and brightness for Omarchy, as a bar widget or a Deck section.",

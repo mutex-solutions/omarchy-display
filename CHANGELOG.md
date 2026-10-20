@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.11
+
+Control layout in the preview footer.
+
+- The zoom controls (`Fit`, `−`, `+`) are pinned to the right edge as one
+  row. Fit is inserted to the left of the zoom buttons, so showing it never
+  shifts them.
+- The view controls sit directly under the preview and do not move when a
+  pending edit appears.
+- **Apply / Cancel** have their own line below the view controls.
+
 ## 0.3.10
 
 Collapsible sections and a real refresh-rate picker.

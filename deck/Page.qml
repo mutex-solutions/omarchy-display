@@ -1236,36 +1236,50 @@ Item {
       }
     }
 
+    // View controls are pinned to the right edge. Fit is inserted to their
+    // left, so showing it does not shift the zoom buttons.
+    Item {
+      width: parent.width
+      height: Style.space(26)
+
+      Row {
+        anchors.right: parent.right
+        spacing: Style.space(6)
+
+        Chip {
+          visible: canvas.panned || canvas.zoom !== 1
+          label: "Fit"
+          onPicked: canvas.resetView()
+        }
+        Chip {
+          label: "−"
+          onPicked: canvas.zoomAt(1 / 1.15, canvas.width / 2, canvas.height / 2)
+        }
+        Chip {
+          label: "+"
+          onPicked: canvas.zoomAt(1.15, canvas.width / 2, canvas.height / 2)
+        }
+      }
+    }
+
+    // Confirming a staged edit has its own line below the view controls, so
+    // the zoom buttons never move when it appears.
     Row {
       width: parent.width
       height: Style.space(26)
       spacing: Style.space(6)
+      visible: page.pendingCount > 0
 
       Chip {
-        visible: page.pendingCount > 0
         label: canvas.invalidText !== "" ? "Apply anyway" : "Apply"
         onPicked: page.applyPending()
       }
       Chip {
-        visible: page.pendingCount > 0
         label: "Cancel"
         onPicked: {
           page.clearPending()
           canvas.cancelStaged()
         }
-      }
-      Chip {
-        visible: canvas.panned || canvas.zoom !== 1
-        label: "Fit"
-        onPicked: canvas.resetView()
-      }
-      Chip {
-        label: "−"
-        onPicked: canvas.zoomAt(1 / 1.15, canvas.width / 2, canvas.height / 2)
-      }
-      Chip {
-        label: "+"
-        onPicked: canvas.zoomAt(1.15, canvas.width / 2, canvas.height / 2)
       }
     }
 
