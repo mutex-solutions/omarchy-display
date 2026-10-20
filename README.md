@@ -28,20 +28,35 @@ omarchy plugin add https://github.com/mutex-solutions/omarchy-display
 ## What the page does
 
 - **Layout** draws every enabled monitor to scale, placed the way Hyprland has
-  them. Click a monitor to make it the target of the controls below.
+  them, with **eight placement boxes** around the reference monitor: the four
+  edges (centred) and the four corners. Click a monitor to select it as the
+  target, then click a box to put it there. A box a monitor already occupies
+  is not drawn, because that place is taken.
 - **Displays** lists every output with its mode and refresh rate. Pick one to
   arrange; the switch turns an output on or off.
-- **Position** puts the target to the left of, right of, above or below the
-  other monitors. These use Hyprland's own `auto-left` / `auto-right` /
-  `auto-up` / `auto-down` positions, so the arrangement is computed from the
-  real geometry rather than from a guessed pixel offset, and stays correct with
-  three or more screens.
 - **Mirror** shows the target on the first other enabled monitor.
+- **Windows** moves windows between screens. **Move** sends the focused window
+  to the other monitor (a window belongs to a workspace, and a workspace
+  belongs to a monitor, so the move goes to the workspace that screen is
+  showing). **Swap screens** swaps the two monitors' active workspaces, which
+  moves every window on each screen to the other one in a single step and is
+  its own undo.
 - **Brightness** uses `brightnessctl`; it appears only when the machine has a
   backlight to control.
 
 Positions are in **scaled logical pixels**: a 3840×2160 panel at scale 2
 occupies 1920×1080 in the layout, which is exactly what Hyprland expects.
+Edge boxes centre the target on that edge; corner boxes sit it diagonally
+outside the corner. Hyprland's own `auto-*` positions only cover the edges and
+align rather than centre, so the eight boxes are computed as explicit
+positions from the sizes the compositor reports.
+
+Hyprland has no "primary output" in the X11 sense: there is no flag to mark
+one monitor as primary. What decides where new windows appear is the workspace
+a window opens on, and workspaces are bound to monitors by the layout order in
+your config. **Swap screens** is therefore the practical primary/secondary
+control: it exchanges what each screen is showing without touching the
+arrangement.
 
 ## Arrangement and config reloads
 

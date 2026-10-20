@@ -20,6 +20,21 @@ Item {
   property int brightness: 0
   property bool brightnessAvailable: true
 
+  // The window the compositor considers focused. The Deck panel is a layer
+  // surface and does not become the active window, so this is the window the
+  // user was working in when they opened the panel.
+  property string activeWindowTitle: ""
+  property string activeWindowClass: ""
+  property int activeWindowMonitorId: 0
+
+  // The monitor the focused window is on, by name. Resolved here rather than
+  // in the page so the page does not have to know Hyprland reports an id.
+  readonly property string activeWindowMonitorName: {
+    for (var i = 0; i < monitors.length; i++)
+      if (monitors[i].id === activeWindowMonitorId) return monitors[i].name
+    return ""
+  }
+
   readonly property bool active: true
   readonly property string label: "Display"
   readonly property string icon: "☼"
@@ -73,9 +88,12 @@ Item {
   // Every action is one hyprctl eval. Fire and forget: state is re-read after
   // a settle delay, never assumed, so a refused rule shows up as "nothing
   // moved" rather than as a lie.
-  function applyLua(script) {
+  function applyLua(script, touchesLayout) {
     Quickshell.execDetached(["hyprctl", "eval", script])
-    pendingPersist = true
+    // Only monitor rules belong in the layout file. A window move or a
+    // workspace swap does not change the arrangement, so it must not rewrite
+    // it (and must not imply the arrangement changed).
+    if (touchesLayout !== false) pendingPersist = true
     settleTimer.restart()
   }
 
@@ -125,6 +143,27 @@ Item {
       + ', mirror = "" })')
   }
 
+  // A workspace is bound to a monitor, so moving a window to another screen
+  // means moving it to a workspace that lives there. The target's active
+  // workspace is the one the user would land on anyway.
+  //
+  // These are dispatchers, not config values: a bare hl.dsp.* call only
+  // constructs one. It has to go through hl.dispatch() to run. A rule like
+  // hl.monitor() is applied directly, which is why the two look different.
+  function moveActiveWindowTo(name) {
+    var m = byName(name)
+    if (!m || !m.activeWorkspaceId) return
+    applyLua('hl.dispatch(hl.dsp.window.move({ workspace = ' + m.activeWorkspaceId + ' }))', false)
+  }
+
+  // Swaps the active workspaces of two monitors, which moves every window on
+  // each screen to the other one in a single step.
+  function swapScreens(a, b) {
+    if (!a || !b) return
+    applyLua('hl.dispatch(hl.dsp.workspace.swap_monitors({ monitor1 = "' + a
+      + '", monitor2 = "' + b + '" }))', false)
+  }
+
   // ---------------------------------------------------------------- reading
 
   Process {
@@ -148,6 +187,7 @@ Item {
               y: Number(m.y || 0),
               scale: Number(m.scale || 1),
               rate: Number(m.refreshRate || 0),
+              activeWorkspaceId: Number((m.activeWorkspace && m.activeWorkspace.id) || 0),
               disabled: m.disabled === true,
               // Hyprland reports the mirror target as a monitor *id*, not a
               // name ("none" when not mirrored). Resolve it below, once every
@@ -168,6 +208,26 @@ Item {
           }
           s.monitors = out
         } catch (e) {
+        }
+      }
+    }
+  }
+
+  Process {
+    id: activeWindowProbe
+    command: ["hyprctl", "activewindow", "-j"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          var w = JSON.parse(text || "{}")
+          s.activeWindowTitle = String(w.title || "")
+          s.activeWindowClass = String(w.class || "")
+          s.activeWindowMonitorId = Number(w.monitor || 0)
+        } catch (e) {
+          s.activeWindowTitle = ""
+          s.activeWindowClass = ""
+          s.activeWindowMonitorId = 0
         }
       }
     }
@@ -256,6 +316,7 @@ Item {
   function refresh() {
     if (!monitorProbe.running) monitorProbe.running = true
     if (!brightnessProbe.running) brightnessProbe.running = true
+    if (!activeWindowProbe.running) activeWindowProbe.running = true
   }
 
   // After an action, wait for the compositor to settle, re-read, then write

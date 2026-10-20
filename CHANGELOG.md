@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0
+
+Spatial placement and windows.
+
+- **Eight placement boxes** around the reference monitor replace the four
+  Left / Right / Above / Below buttons: four edge boxes and four corners.
+  Edge boxes centre the target on the edge, corner boxes place it diagonally
+  outside the corner. A box a monitor already occupies is not drawn.
+- **Move** sends the focused window to the other monitor, through the
+  workspace that monitor is showing.
+- **Swap screens** swaps the two monitors' active workspaces, moving every
+  window between them at once. Hyprland has no primary-output flag, so this is
+  the practical primary/secondary control.
+- Window actions do not rewrite the layout file: they do not change the
+  arrangement.
+- `hl.dsp.*` calls are dispatchers and must be run through `hl.dispatch()`
+  after being constructed. `hl.monitor()` rules are applied directly. That
+  difference is why the two paths look different in `State.qml`.
+
 ## 0.2.0
 
 Multi-monitor arrangement.
