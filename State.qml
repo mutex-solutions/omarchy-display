@@ -87,6 +87,15 @@ Item {
     return m ? modeString(m) : ""
   }
 
+  // The internal panel is the one with a backlight. brightnessctl addresses
+  // that panel only; an external display has no backlight here.
+  function isInternal(name) {
+    return /^(eDP|LVDS|DSI)/.test(String(name))
+  }
+  function hasBrightness(name) {
+    return brightnessAvailable && isInternal(name)
+  }
+
   function rateLabel(rate) {
     var r = Math.round(Number(rate) * 100) / 100
     return (Math.abs(r - Math.round(r)) < 0.005 ? String(Math.round(r)) : r.toFixed(2)) + " Hz"
@@ -115,11 +124,18 @@ Item {
       var key = rate.toFixed(2)
       if (seen[key]) continue
       seen[key] = true
-      out.push({ mode: ms, rate: rate, label: rateLabel(rate) })
+      // hyprctl reports "WxH@RHz" but hl.monitor wants "WxH@R". Passing the
+      // Hz form back is silently rejected.
+      out.push({ mode: p[1] + "x" + p[2] + "@" + p[3], rate: rate,
+                 label: rateLabel(rate) })
     }
     var ck = Number(m.rate).toFixed(2)
     if (!seen[ck])
       out.push({ mode: currentMode(m), rate: Number(m.rate), label: rateLabel(m.rate) })
+    // The XPS 13 panel advertises only 120 Hz but accepts its native
+    // 2560x1600@60 mode. Without this fallback the 120/60 choice is invisible.
+    if (isInternal(m.name) && !seen["60.00"])
+      out.push({ mode: res + "@60", rate: 60, label: rateLabel(60) })
     out.sort(function(a, b) { return a.rate - b.rate })
     return out
   }

@@ -61,8 +61,13 @@ omarchy plugin add https://github.com/mutex-solutions/omarchy-display
   the modes the panel actually advertises at its current resolution, read from
   `hyprctl`'s `availableModes`. The mode in use is included even when the panel
   does not advertise it (the XPS 13 accepts a custom 60 Hz mode that is absent
-  from the list). A rate change is staged like a position: Apply confirms,
-  Cancel discards.
+  from the list). The internal panel also gets its native 60 Hz mode even
+  though it is absent from `availableModes`, which is what makes the 120/60
+  choice possible on the XPS 13. A rate change is staged like a position:
+  Apply confirms, Cancel discards.
+- **Brightness is shown only for the internal display.** `brightnessctl`
+  addresses the laptop backlight, not an external monitor, so selecting an
+  external display hides the section instead of moving the wrong screen.
 - **Sections collapse** from their headers; the chevron shows the state.
 - **Mirror** shows the target on the first other enabled monitor.
 - **Windows** moves windows between screens. **Move** sends the focused window

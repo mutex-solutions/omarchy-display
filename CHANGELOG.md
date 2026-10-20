@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.14
+
+Refresh rates that actually apply, and brightness on the right display.
+
+- `availableModes` reports `WxH@RHz`, but `hl.monitor` wants `WxH@R`. Passing
+  the Hz form back was silently rejected, which is why choosing a rate did
+  nothing. The mode strings are normalised before they reach Hyprland.
+- The XPS 13 internal panel advertises only `2560x1600@120`, so the dropdown
+  had one entry. The native `2560x1600@60` mode is accepted but not
+  advertised; internal panels (`eDP`, `LVDS`, `DSI`) now get a 60 Hz fallback
+  at their current resolution.
+- **Brightness follows the selected display.** It is shown only for an
+  internal display, because brightnessctl addresses the laptop backlight and
+  would move the wrong screen when an external monitor is selected.
+
+Verified: eDP-1 lists 60 and 120 Hz; applying 60 put the live rate at 60 and
+restoring 120 brought it back; DP-1 (external) hides Brightness and lists its
+12 rates.
+
 ## 0.3.13
 
 Section order by what is used most.

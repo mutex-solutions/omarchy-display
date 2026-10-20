@@ -562,12 +562,12 @@ Item {
       id: brightnessSection
       glyph: "☼"
       title: "Brightness"
-      visible: page.state ? page.state.brightnessAvailable : false
+      visible: page.state && page.target && page.state.hasBrightness(page.target.name)
 
     Item {
       width: parent.width
       height: Style.space(24)
-      visible: page.state ? page.state.brightnessAvailable : false
+      visible: page.state && page.target && page.state.hasBrightness(page.target.name)
 
       Text {
         id: levelGlyph
