@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.15
+
+Refresh rates apply when chosen.
+
+- A selected rate now applies immediately. It was staged, and the Apply row
+  lives with the layout controls below Brightness, so from the rate dropdown
+  the confirmation was off-screen and the choice looked like it did nothing.
+- The rate rule uses the display's **live** position, so applying a rate can
+  never also apply a staged, unconfirmed position.
+- The rate control is hidden for a mirrored output, which has no independent
+  rate to set.
+
+Verified: applying 60 put eDP-1 at 60 Hz and the label followed; applying 120
+restored 120.002.
+
 ## 0.3.14
 
 Refresh rates that actually apply, and brightness on the right display.

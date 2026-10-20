@@ -113,10 +113,14 @@ Item {
     var pm = pendingMode(m)
     return pm !== "" ? state.modeRateLabel(pm) : (Math.round(Number(m.rate)) + " Hz")
   }
-  function stageRate(mode) {
-    if (!target) return
-    stage(target.name, posX(target), posY(target), mode)
+  // A rate is an explicit choice and trivially reversible, so it is applied
+  // immediately. The position is the LIVE one: applying at posX/posY would
+  // also apply a staged position that has not been confirmed.
+  function applyRate(mode) {
+    if (!state || !target) return
     rateOpen = false
+    var m = state.byName(target.name)
+    if (m) state.applyArrangement(target.name, m.x, m.y, mode)
   }
 
   function clearPending() { pending = ({}) }
@@ -454,7 +458,8 @@ Item {
       Item {
         width: parent.width
         height: Style.space(30)
-        visible: page.target && page.targetRates().length > 0
+        visible: page.target && page.target.mirrorOf === "none"
+          && page.targetRates().length > 0
 
         MouseArea {
           anchors.fill: parent
@@ -518,7 +523,7 @@ Item {
             MouseArea {
               anchors.fill: parent
               cursorShape: Qt.PointingHandCursor
-              onClicked: page.stageRate(modelData.mode)
+              onClicked: page.applyRate(modelData.mode)
             }
           }
         }

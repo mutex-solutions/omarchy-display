@@ -63,8 +63,9 @@ omarchy plugin add https://github.com/mutex-solutions/omarchy-display
   does not advertise it (the XPS 13 accepts a custom 60 Hz mode that is absent
   from the list). The internal panel also gets its native 60 Hz mode even
   though it is absent from `availableModes`, which is what makes the 120/60
-  choice possible on the XPS 13. A rate change is staged like a position:
-  Apply confirms, Cancel discards.
+  choice possible on the XPS 13. A rate change **applies immediately**: it is
+  an explicit selection and trivially reversible. Positions remain staged
+  behind Apply/Cancel, because those are the ones that are easy to knock.
 - **Brightness is shown only for the internal display.** `brightnessctl`
   addresses the laptop backlight, not an external monitor, so selecting an
   external display hides the section instead of moving the wrong screen.
