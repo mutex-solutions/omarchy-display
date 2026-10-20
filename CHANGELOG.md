@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.5
+
+The real cause of the display jumping to the top-left when a drag started.
+
+The x and y of each monitor were held by a `Binding` that is switched off while
+dragging. `Binding` defaults to restoring the value the property had before
+the binding was applied, which is 0. So the moment `dragging` became true, x
+and y snapped to 0,0, and the pointer delta was then applied from there. The
+snap and the guides were correct; the item they were computed for was in the
+wrong place.
+
+`restoreMode: Binding.RestoreNone` keeps the current position when the binding
+is disabled. Verified with a real synthetic drag injected through Hyprland's
+Lua API: the press logged the item at (149,29), and the first movement logged
+(149,29) rather than (0,0); the preview followed the pointer and the status
+updated.
+
 ## 0.3.4
 
 The drag was being destroyed by the state poll.

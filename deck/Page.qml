@@ -746,17 +746,23 @@ Item {
           // x and y are owned by a Binding, not a plain binding: during a
           // drag the Binding is off and the drag writes x/y directly, which
           // an ordinary binding would overwrite on the next re-evaluate.
+          // RestoreNone is load-bearing: Binding defaults to restoring the
+          // value the property had before the binding, which is 0. Without
+          // it the display jumps to the top-left of the preview the moment a
+          // drag starts.
           Binding {
             target: mon
             property: "x"
             value: canvas.canvasX(modelData.x)
             when: !canvas.dragging
+            restoreMode: Binding.RestoreNone
           }
           Binding {
             target: mon
             property: "y"
             value: canvas.canvasY(modelData.y)
             when: !canvas.dragging
+            restoreMode: Binding.RestoreNone
           }
 
           width: Math.max(16, page.state.logicalW(modelData) * canvas.fit)
