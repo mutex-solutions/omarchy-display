@@ -384,6 +384,263 @@ Item {
 
     Rule { }
 
+    // ---- every display: pick one, switch one off ----
+    Section {
+      id: displaysSection
+      glyph: "☰"
+      title: "Displays"
+      value: page.state ? String(page.state.monitors.length) : "0"
+      visible: page.state ? page.state.monitors.length > 1 : false
+
+    Repeater {
+      model: page.state ? page.state.monitors : []
+
+      delegate: Item {
+        required property var modelData
+
+        readonly property bool current: page.target && modelData.name === page.target.name
+
+        width: col.width
+        height: Style.space(28)
+        visible: (page.state ? page.state.monitors.length : 0) > 1
+
+        Rectangle {
+          anchors.fill: parent
+          color: parent.current ? Util.alpha(Color.foreground, 0.06) : "transparent"
+        }
+
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: if (!modelData.disabled) page.select(modelData.name)
+        }
+
+        Text {
+          id: nameText
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: modelData.name
+          color: modelData.disabled
+            ? Util.alpha(Color.foreground, 0.4)
+            : Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.body
+          font.bold: parent.current
+        }
+
+        Caps {
+          anchors.left: nameText.right
+          anchors.leftMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: modelData.disabled
+            ? "OFF"
+            : (modelData.mirrorOf !== "none"
+                ? "MIRROR · " + modelData.mirrorOf
+                : modelData.w + "×" + modelData.h + " · " + page.rateTextFor(modelData))
+        }
+
+        Switch {
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          on: !modelData.disabled
+          onToggled: page.state.setDisabled(modelData.name, !modelData.disabled)
+        }
+      }
+    }
+      // Refresh rate of the selected display, chosen from the modes the panel
+      // actually advertises at its current resolution.
+      Item {
+        width: parent.width
+        height: Style.space(30)
+        visible: page.target && page.targetRates().length > 0
+
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: page.rateOpen = !page.rateOpen
+        }
+
+        Text {
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: "Refresh rate"
+          color: Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.body
+        }
+
+        Text {
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: page.targetRateLabel() + "  ▾"
+          color: Util.alpha(Color.foreground, 0.7)
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      Column {
+        width: parent.width
+        spacing: 0
+        visible: page.rateOpen
+
+        Repeater {
+          model: page.targetRates()
+
+          delegate: Item {
+            required property var modelData
+            readonly property bool current: modelData.label === page.targetRateLabel()
+
+            width: col.width
+            height: Style.space(26)
+
+            Rectangle {
+              anchors.fill: parent
+              color: parent.current
+                ? Util.alpha(Color.accent, Style.selectedFillAlpha)
+                : "transparent"
+            }
+
+            Text {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(20)
+              anchors.verticalCenter: parent.verticalCenter
+              text: modelData.label
+              color: parent.current ? Color.accent : Color.foreground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: page.stageRate(modelData.mode)
+            }
+          }
+        }
+      }
+
+    // ---- mirroring ----
+    Item {
+      width: parent.width
+      height: Style.space(30)
+      visible: page.others.length > 0
+
+      Text {
+        anchors.left: parent.left
+        anchors.leftMargin: Style.space(8)
+        anchors.verticalCenter: parent.verticalCenter
+        text: "Mirror " + (page.target ? page.target.name : "")
+        color: Color.foreground
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+      }
+
+      Switch {
+        anchors.right: parent.right
+        anchors.rightMargin: Style.space(8)
+        anchors.verticalCenter: parent.verticalCenter
+        on: page.target ? page.target.mirrorOf !== "none" : false
+        onToggled: {
+          if (!page.state || !page.target || !page.others.length) return
+          if (page.target.mirrorOf !== "none") page.state.unmirror(page.target.name)
+          else page.state.mirrorTo(page.target.name, page.others[0].name)
+        }
+      }
+    }
+
+    }
+
+    Rule { }
+
+    // ---- brightness ----
+    Section {
+      id: brightnessSection
+      glyph: "☼"
+      title: "Brightness"
+      visible: page.state ? page.state.brightnessAvailable : false
+
+    Item {
+      width: parent.width
+      height: Style.space(24)
+      visible: page.state ? page.state.brightnessAvailable : false
+
+      Text {
+        id: levelGlyph
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(14)
+        text: "☼"
+        color: Util.alpha(Color.foreground, 0.55)
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      Text {
+        id: levelValue
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(34)
+        horizontalAlignment: Text.AlignRight
+        text: page.state ? page.state.brightness + "%" : ""
+        color: Util.alpha(Color.foreground, 0.7)
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      Item {
+        anchors.left: levelGlyph.right
+        anchors.leftMargin: Style.space(8)
+        anchors.right: levelValue.left
+        anchors.rightMargin: Style.space(8)
+        anchors.verticalCenter: parent.verticalCenter
+        height: Style.space(18)
+
+        Rectangle {
+          id: track
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          height: 3
+          radius: 2
+          color: Util.alpha(Color.foreground, 0.18)
+
+          Rectangle {
+            width: track.width * page.level
+            height: parent.height
+            radius: 2
+            color: Color.accent
+          }
+        }
+
+        Rectangle {
+          width: 9
+          height: 9
+          radius: 5
+          color: Color.accent
+          x: Math.max(0, Math.min(track.width, track.width * page.level)) - width / 2
+          anchors.verticalCenter: parent.verticalCenter
+        }
+
+        MouseArea {
+          anchors.fill: parent
+          preventStealing: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: function(mouse) { if (page.state) page.state.setBrightness(Math.round(mouse.x / width * 100)) }
+          onPositionChanged: function(mouse) {
+            if (pressed && page.state) page.state.setBrightness(Math.round(mouse.x / width * 100))
+          }
+        }
+      }
+    }
+    }
+
+    Rule { }
+
     // ---- layout preview, free drag with guides ----
     Head {
       glyph: "▭"
@@ -1283,178 +1540,6 @@ Item {
       }
     }
 
-    // ---- every display: pick one, switch one off ----
-    Section {
-      id: displaysSection
-      glyph: "☰"
-      title: "Displays"
-      value: page.state ? String(page.state.monitors.length) : "0"
-      visible: page.state ? page.state.monitors.length > 1 : false
-
-    Repeater {
-      model: page.state ? page.state.monitors : []
-
-      delegate: Item {
-        required property var modelData
-
-        readonly property bool current: page.target && modelData.name === page.target.name
-
-        width: col.width
-        height: Style.space(28)
-        visible: (page.state ? page.state.monitors.length : 0) > 1
-
-        Rectangle {
-          anchors.fill: parent
-          color: parent.current ? Util.alpha(Color.foreground, 0.06) : "transparent"
-        }
-
-        MouseArea {
-          anchors.fill: parent
-          cursorShape: Qt.PointingHandCursor
-          onClicked: if (!modelData.disabled) page.select(modelData.name)
-        }
-
-        Text {
-          id: nameText
-          anchors.left: parent.left
-          anchors.leftMargin: Style.space(8)
-          anchors.verticalCenter: parent.verticalCenter
-          text: modelData.name
-          color: modelData.disabled
-            ? Util.alpha(Color.foreground, 0.4)
-            : Color.foreground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.body
-          font.bold: parent.current
-        }
-
-        Caps {
-          anchors.left: nameText.right
-          anchors.leftMargin: Style.space(8)
-          anchors.verticalCenter: parent.verticalCenter
-          text: modelData.disabled
-            ? "OFF"
-            : (modelData.mirrorOf !== "none"
-                ? "MIRROR · " + modelData.mirrorOf
-                : modelData.w + "×" + modelData.h + " · " + page.rateTextFor(modelData))
-        }
-
-        Switch {
-          anchors.right: parent.right
-          anchors.rightMargin: Style.space(8)
-          anchors.verticalCenter: parent.verticalCenter
-          on: !modelData.disabled
-          onToggled: page.state.setDisabled(modelData.name, !modelData.disabled)
-        }
-      }
-    }
-      // Refresh rate of the selected display, chosen from the modes the panel
-      // actually advertises at its current resolution.
-      Item {
-        width: parent.width
-        height: Style.space(30)
-        visible: page.target && page.targetRates().length > 0
-
-        MouseArea {
-          anchors.fill: parent
-          cursorShape: Qt.PointingHandCursor
-          onClicked: page.rateOpen = !page.rateOpen
-        }
-
-        Text {
-          anchors.left: parent.left
-          anchors.leftMargin: Style.space(8)
-          anchors.verticalCenter: parent.verticalCenter
-          text: "Refresh rate"
-          color: Color.foreground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.body
-        }
-
-        Text {
-          anchors.right: parent.right
-          anchors.rightMargin: Style.space(8)
-          anchors.verticalCenter: parent.verticalCenter
-          text: page.targetRateLabel() + "  ▾"
-          color: Util.alpha(Color.foreground, 0.7)
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-        }
-      }
-
-      Column {
-        width: parent.width
-        spacing: 0
-        visible: page.rateOpen
-
-        Repeater {
-          model: page.targetRates()
-
-          delegate: Item {
-            required property var modelData
-            readonly property bool current: modelData.label === page.targetRateLabel()
-
-            width: col.width
-            height: Style.space(26)
-
-            Rectangle {
-              anchors.fill: parent
-              color: parent.current
-                ? Util.alpha(Color.accent, Style.selectedFillAlpha)
-                : "transparent"
-            }
-
-            Text {
-              anchors.left: parent.left
-              anchors.leftMargin: Style.space(20)
-              anchors.verticalCenter: parent.verticalCenter
-              text: modelData.label
-              color: parent.current ? Color.accent : Color.foreground
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
-            }
-
-            MouseArea {
-              anchors.fill: parent
-              cursorShape: Qt.PointingHandCursor
-              onClicked: page.stageRate(modelData.mode)
-            }
-          }
-        }
-      }
-    }
-
-    Rule { }
-
-    // ---- mirroring ----
-    Item {
-      width: parent.width
-      height: Style.space(30)
-      visible: page.others.length > 0
-
-      Text {
-        anchors.left: parent.left
-        anchors.leftMargin: Style.space(8)
-        anchors.verticalCenter: parent.verticalCenter
-        text: "Mirror " + (page.target ? page.target.name : "")
-        color: Color.foreground
-        font.family: Style.font.family
-        font.pixelSize: Style.font.body
-      }
-
-      Switch {
-        anchors.right: parent.right
-        anchors.rightMargin: Style.space(8)
-        anchors.verticalCenter: parent.verticalCenter
-        on: page.target ? page.target.mirrorOf !== "none" : false
-        onToggled: {
-          if (!page.state || !page.target || !page.others.length) return
-          if (page.target.mirrorOf !== "none") page.state.unmirror(page.target.name)
-          else page.state.mirrorTo(page.target.name, page.others[0].name)
-        }
-      }
-    }
-
     Rule { }
 
     // ---- windows ----
@@ -1527,90 +1612,6 @@ Item {
         enabled: !!(page.target && page.reference)
         onPicked: if (page.target && page.reference)
           page.state.swapScreens(page.target.name, page.reference.name)
-      }
-    }
-    }
-
-    Rule { }
-
-    // ---- brightness ----
-    Section {
-      id: brightnessSection
-      glyph: "☼"
-      title: "Brightness"
-      visible: page.state ? page.state.brightnessAvailable : false
-
-    Item {
-      width: parent.width
-      height: Style.space(24)
-      visible: page.state ? page.state.brightnessAvailable : false
-
-      Text {
-        id: levelGlyph
-        anchors.left: parent.left
-        anchors.verticalCenter: parent.verticalCenter
-        width: Style.space(14)
-        text: "☼"
-        color: Util.alpha(Color.foreground, 0.55)
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
-      }
-
-      Text {
-        id: levelValue
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        width: Style.space(34)
-        horizontalAlignment: Text.AlignRight
-        text: page.state ? page.state.brightness + "%" : ""
-        color: Util.alpha(Color.foreground, 0.7)
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
-      }
-
-      Item {
-        anchors.left: levelGlyph.right
-        anchors.leftMargin: Style.space(8)
-        anchors.right: levelValue.left
-        anchors.rightMargin: Style.space(8)
-        anchors.verticalCenter: parent.verticalCenter
-        height: Style.space(18)
-
-        Rectangle {
-          id: track
-          anchors.left: parent.left
-          anchors.right: parent.right
-          anchors.verticalCenter: parent.verticalCenter
-          height: 3
-          radius: 2
-          color: Util.alpha(Color.foreground, 0.18)
-
-          Rectangle {
-            width: track.width * page.level
-            height: parent.height
-            radius: 2
-            color: Color.accent
-          }
-        }
-
-        Rectangle {
-          width: 9
-          height: 9
-          radius: 5
-          color: Color.accent
-          x: Math.max(0, Math.min(track.width, track.width * page.level)) - width / 2
-          anchors.verticalCenter: parent.verticalCenter
-        }
-
-        MouseArea {
-          anchors.fill: parent
-          preventStealing: true
-          cursorShape: Qt.PointingHandCursor
-          onClicked: function(mouse) { if (page.state) page.state.setBrightness(Math.round(mouse.x / width * 100)) }
-          onPositionChanged: function(mouse) {
-            if (pressed && page.state) page.state.setBrightness(Math.round(mouse.x / width * 100))
-          }
-        }
       }
     }
     }

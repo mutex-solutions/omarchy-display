@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.13
+
+Section order by what is used most.
+
+- **Displays** (selection, refresh rate, mirror) comes first, directly under
+  the hero.
+- **Brightness** follows.
+- **Layout** (the drag preview and its controls) is below both, since
+  selecting a monitor and setting its rate is the common action.
+- **Windows** is last.
+- Mirror moved inside the Displays section, next to the monitor it targets.
+
 ## 0.3.12
 
 - The standalone panel's scrollbar is hidden. It overlaid the right edge of
