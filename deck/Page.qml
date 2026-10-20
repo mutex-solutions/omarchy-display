@@ -323,6 +323,8 @@ Item {
       property bool moved: false
       property real startItemX: 0
       property real startItemY: 0
+      property real pressSceneX: 0
+      property real pressSceneY: 0
       property real freeX: 0
       property real freeY: 0
       property real dropX: 0
@@ -694,6 +696,7 @@ Item {
       }
 
       Repeater {
+        id: monitorRepeater
         model: canvas.list
 
         delegate: Rectangle {
@@ -705,7 +708,7 @@ Item {
             ? canvas.overlapsAt(modelData.name, canvas.dropX, canvas.dropY)
             : false
 
-          z: dragArea.drag.active ? 3 : 1
+          z: canvas.dragItem === mon ? 3 : 1
 
           // x and y are owned by a Binding, not a plain binding: during a
           // drag the Binding is off and the drag writes x/y directly, which
@@ -752,23 +755,36 @@ Item {
           MouseArea {
             id: dragArea
             anchors.fill: parent
-            cursorShape: dragArea.drag.active ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-            drag.target: mon
-            drag.axis: Drag.XandYAxis
-            drag.minimumX: 0
-            drag.maximumX: Math.max(0, canvas.width - mon.width)
-            drag.minimumY: 0
-            drag.maximumY: Math.max(0, canvas.height - mon.height)
+            // The page lives in a ScrollView; without this the flickable
+            // steals the grab as soon as the pointer moves and the display
+            // never follows it.
+            preventStealing: true
+            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
 
-            onPressed: {
+            // No drag.target: Qt's own drag moves the item from the pointer
+            // delta and would overwrite the snapped position depending on
+            // handler ordering. The pointer delta is applied here, the snap
+            // is computed, and the snapped position is what stays.
+            onPressed: function(mouse) {
+              var p = dragArea.mapToItem(null, mouse.x, mouse.y)
+              canvas.pressSceneX = p.x
+              canvas.pressSceneY = p.y
               canvas.startItemX = mon.x
               canvas.startItemY = mon.y
               canvas.beginDrag(modelData, mon)
               page.select(modelData.name)
             }
 
-            onPositionChanged: {
-              if (pressed) canvas.moveDrag(modelData, mon)
+            onPositionChanged: function(mouse) {
+              if (!pressed) return
+              var p = dragArea.mapToItem(null, mouse.x, mouse.y)
+              var nx = canvas.startItemX + (p.x - canvas.pressSceneX)
+              var ny = canvas.startItemY + (p.y - canvas.pressSceneY)
+              nx = Math.max(0, Math.min(canvas.width - mon.width, nx))
+              ny = Math.max(0, Math.min(canvas.height - mon.height, ny))
+              mon.x = nx
+              mon.y = ny
+              canvas.moveDrag(modelData, mon)
             }
 
             onReleased: canvas.endDrag(modelData)
@@ -1106,6 +1122,7 @@ Item {
 
         MouseArea {
           anchors.fill: parent
+          preventStealing: true
           cursorShape: Qt.PointingHandCursor
           onClicked: function(mouse) { if (page.state) page.state.setBrightness(Math.round(mouse.x / width * 100)) }
           onPositionChanged: function(mouse) {

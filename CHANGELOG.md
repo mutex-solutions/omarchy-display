@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.3
+
+Fix the drag itself, which 0.3.2 got wrong in two places.
+
+- **The Deck page lives inside a ScrollView, and its flickable stole the
+  drag** as soon as the pointer moved. The display never followed the pointer.
+  The monitor MouseArea now sets `preventStealing`, and so does the brightness
+  slider.
+- **Qt's `drag.target` was replaced with explicit pointer-delta movement.**
+  The built-in drag moves the item from the pointer delta, and depending on
+  handler ordering it could overwrite the snapped position after `moveDrag`
+  had computed it. The pointer delta is applied, the snap is computed, and the
+  snapped position is what stays.
+- Verified in the running shell with a simulated drag: the item moves to the
+  snapped position, both guides render, and the status reports
+  `corner · flush right → DP-1 · bottom edges → DP-1` with the exact drop
+  coordinates.
+
 ## 0.3.2
 
 The free-drag interaction from the Deck mock, ported into the panel.
