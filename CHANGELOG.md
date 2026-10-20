@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.4
+
+The drag was being destroyed by the state poll.
+
+The monitor state replaces its array on every poll, even when nothing moved.
+That array was fed straight into the Repeater, so every five seconds, and
+after every action, every delegate was destroyed and recreated. Mid-drag this
+removed the item under the pointer and recreated the monitors at 0,0, while
+the guides stayed at their old coordinates. That is the "moving around the
+viewport" behaviour.
+
+The canvas now keeps a snapshot of the arrangement. It is compared by value
+and only replaced when something actually changed, and it is never replaced
+while a drag is running; a deferred sync is applied when the drag settles.
+
+Verified in the running shell by starting a simulated drag and forcing a
+state refresh mid-drag: the same delegate survived, `dragging` stayed true,
+and the guides and status were unchanged.
+
 ## 0.3.3
 
 Fix the drag itself, which 0.3.2 got wrong in two places.

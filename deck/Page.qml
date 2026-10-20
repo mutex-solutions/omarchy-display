@@ -250,7 +250,14 @@ Item {
       width: parent.width
       height: Style.space(160)
 
-      readonly property var list: page.state ? page.state.layoutMonitors : []
+      // The state replaces its monitor array on every poll, even when
+      // nothing moved. Feeding that straight into a Repeater destroys and
+      // recreates every delegate, which kills an in-flight drag. The view is
+      // a snapshot, refreshed only when the values actually change and never
+      // while a drag is running.
+      readonly property var live: page.state ? page.state.layoutMonitors : []
+      property var view: []
+      property bool pendingViewSync: false
       readonly property real pad: Style.space(4)
 
       // Snap distances, in screen pixels. An edge connection is generous, a
@@ -267,24 +274,24 @@ Item {
       // ---- world bounds and transform ----
       readonly property real minX: {
         var v = 0; var first = true
-        for (var i = 0; i < list.length; i++) { if (first || list[i].x < v) { v = list[i].x; first = false } }
+        for (var i = 0; i < view.length; i++) { if (first || view[i].x < v) { v = view[i].x; first = false } }
         return first ? 0 : v
       }
       readonly property real minY: {
         var v = 0; var first = true
-        for (var i = 0; i < list.length; i++) { if (first || list[i].y < v) { v = list[i].y; first = false } }
+        for (var i = 0; i < view.length; i++) { if (first || view[i].y < v) { v = view[i].y; first = false } }
         return first ? 0 : v
       }
       readonly property real spanW: {
         var maxX = minX
-        for (var i = 0; i < list.length; i++)
-          maxX = Math.max(maxX, list[i].x + page.state.logicalW(list[i]))
+        for (var i = 0; i < view.length; i++)
+          maxX = Math.max(maxX, view[i].x + page.state.logicalW(view[i]))
         return Math.max(1, maxX - minX)
       }
       readonly property real spanH: {
         var maxY = minY
-        for (var i = 0; i < list.length; i++)
-          maxY = Math.max(maxY, list[i].y + page.state.logicalH(list[i]))
+        for (var i = 0; i < view.length; i++)
+          maxY = Math.max(maxY, view[i].y + page.state.logicalH(view[i]))
         return Math.max(1, maxY - minY)
       }
 
@@ -294,12 +301,12 @@ Item {
       // cannot be aimed.
       readonly property real maxW: {
         var v = 1
-        for (var i = 0; i < list.length; i++) v = Math.max(v, page.state.logicalW(list[i]))
+        for (var i = 0; i < view.length; i++) v = Math.max(v, page.state.logicalW(view[i]))
         return v
       }
       readonly property real maxH: {
         var v = 1
-        for (var i = 0; i < list.length; i++) v = Math.max(v, page.state.logicalH(list[i]))
+        for (var i = 0; i < view.length; i++) v = Math.max(v, page.state.logicalH(view[i]))
         return v
       }
       readonly property real worldW: spanW + maxW
@@ -356,10 +363,35 @@ Item {
           canvas.locked = false
           canvas.lockedSnap = null
           canvas.outSince = 0
+          canvas.syncView()
+          canvas.refreshValidity("", 0, 0)
         }
       }
 
-      onListChanged: canvas.refreshValidity("", 0, 0)
+
+      function sameView(a, b) {
+        if (a.length !== b.length) return false
+        for (var i = 0; i < a.length; i++) {
+          if (a[i].name !== b[i].name || a[i].x !== b[i].x || a[i].y !== b[i].y ||
+              a[i].w !== b[i].w || a[i].h !== b[i].h || a[i].scale !== b[i].scale)
+            return false
+        }
+        return true
+      }
+
+      function syncView() {
+        if (dragging) { pendingViewSync = true; return }
+        pendingViewSync = false
+        if (sameView(live, view)) return
+        view = live.slice()
+      }
+
+      onLiveChanged: {
+        syncView()
+        refreshValidity("", 0, 0)
+      }
+
+      Component.onCompleted: syncView()
 
       // ------------------------------------------------------ snap geometry
 
@@ -381,16 +413,16 @@ Item {
       function overlapsAt(name, x, y) {
         var w = 0
         var h = 0
-        for (var i = 0; i < list.length; i++) {
-          if (list[i].name === name) {
-            w = page.state.logicalW(list[i])
-            h = page.state.logicalH(list[i])
+        for (var i = 0; i < view.length; i++) {
+          if (view[i].name === name) {
+            w = page.state.logicalW(view[i])
+            h = page.state.logicalH(view[i])
             break
           }
         }
         if (w === 0) return false
-        for (var j = 0; j < list.length; j++) {
-          var o = list[j]
+        for (var j = 0; j < view.length; j++) {
+          var o = view[j]
           if (o.name === name) continue
           if (rectsOverlap({ x: x, y: y, w: w, h: h },
                            { x: o.x, y: o.y, w: page.state.logicalW(o), h: page.state.logicalH(o) }))
@@ -401,8 +433,8 @@ Item {
 
       function refreshValidity(dragName, dx, dy) {
         var rects = []
-        for (var i = 0; i < list.length; i++) {
-          var m = list[i]
+        for (var i = 0; i < view.length; i++) {
+          var m = view[i]
           rects.push({
             name: m.name,
             x: (dragName !== "" && m.name === dragName) ? dx : m.x,
@@ -529,8 +561,8 @@ Item {
         var dw = page.state.logicalW(D)
         var dh = page.state.logicalH(D)
         var near = []
-        for (var i = 0; i < list.length; i++) {
-          var O = list[i]
+        for (var i = 0; i < view.length; i++) {
+          var O = view[i]
           if (O.name === D.name) continue
           var cs = candidatesFor(D, O, freeX, freeY)
           for (var j = 0; j < cs.length; j++) {
@@ -553,8 +585,8 @@ Item {
         for (var k = 0; k < near.length; k++) {
           var cc = near[k]
           var hits = false
-          for (var q = 0; q < list.length; q++) {
-            var oo = list[q]
+          for (var q = 0; q < view.length; q++) {
+            var oo = view[q]
             if (oo.name === D.name) continue
             if (rectsOverlap({ x: cc.x, y: cc.y, w: dw, h: dh },
                              { x: oo.x, y: oo.y, w: page.state.logicalW(oo), h: page.state.logicalH(oo) })) {
@@ -678,6 +710,7 @@ Item {
           dragName = ""
           hasGuideX = false
           hasGuideY = false
+          syncView()
           return
         }
         page.state.moveTo(m.name, dropX, dropY)
@@ -697,7 +730,7 @@ Item {
 
       Repeater {
         id: monitorRepeater
-        model: canvas.list
+        model: canvas.view
 
         delegate: Rectangle {
           id: mon
