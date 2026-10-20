@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.20
+
+- A **4x1 tile** (`tileFull`) lists each monitor with its resolution and
+  refresh rate, which the 2x1 summary cannot. A tap opens the display page.
+
 ## 0.3.19
 
 - **Window management moved out.** Moving a window and swapping screens now
