@@ -100,6 +100,9 @@ Item {
     return h || v
   }
 
+  // The host injects `state` after the page instance exists, so this is the
+  // reliable moment to re-read: the page can open long after the last poll.
+  onStateChanged: if (state) state.refresh()
   Component.onCompleted: if (state) state.refresh()
 
   // ----------------------------------------------------------------- chrome
