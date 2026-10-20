@@ -249,6 +249,7 @@ Item {
       id: canvas
       width: parent.width
       height: Style.space(160)
+      clip: true
 
       // The state replaces its monitor array on every poll, even when
       // nothing moved. Feeding that straight into a Repeater destroys and
@@ -318,10 +319,10 @@ Item {
       readonly property real offsetX: (width - spanW * fit) / 2
       readonly property real offsetY: (height - spanH * fit) / 2
 
-      function canvasX(wx) { return offsetX + (wx - minX) * fit }
-      function canvasY(wy) { return offsetY + (wy - minY) * fit }
-      function worldX(cx) { return (cx - offsetX) / fit + minX }
-      function worldY(cy) { return (cy - offsetY) / fit + minY }
+      function canvasX(wx) { return offsetX + panX + (wx - minX) * fit }
+      function canvasY(wy) { return offsetY + panY + (wy - minY) * fit }
+      function worldX(cx) { return (cx - offsetX - panX) / fit + minX }
+      function worldY(cy) { return (cy - offsetY - panY) / fit + minY }
 
       // ---- drag state ----
       property bool dragging: false
@@ -332,6 +333,8 @@ Item {
       property real startItemY: 0
       property real pressSceneX: 0
       property real pressSceneY: 0
+      property real panX: 0
+      property real panY: 0
       property real freeX: 0
       property real freeY: 0
       property real dropX: 0
@@ -363,6 +366,8 @@ Item {
           canvas.locked = false
           canvas.lockedSnap = null
           canvas.outSince = 0
+          canvas.panX = 0
+          canvas.panY = 0
           canvas.syncView()
           canvas.refreshValidity("", 0, 0)
         }
@@ -688,6 +693,25 @@ Item {
         graceTimer.stop()
       }
 
+      // Overflow: when the display reaches an edge of the preview, pan the
+      // view instead of stopping the drag. The display stays at the edge and
+      // its world position keeps following the pointer, so a snap position
+      // outside the original viewport is still reachable.
+      function moveDragTo(m, item, nx, ny) {
+        var margin = Style.space(4)
+        var loX = margin
+        var hiX = width - margin - item.width
+        var loY = margin
+        var hiY = height - margin - item.height
+        if (nx < loX) { panX -= (nx - loX); nx = loX }
+        else if (nx > hiX) { panX -= (nx - hiX); nx = hiX }
+        if (ny < loY) { panY -= (ny - loY); ny = loY }
+        else if (ny > hiY) { panY -= (ny - hiY); ny = hiY }
+        item.x = nx
+        item.y = ny
+        moveDrag(m, item)
+      }
+
       function moveDrag(m, item) {
         if (Math.abs(item.x - startItemX) > 2 || Math.abs(item.y - startItemY) > 2)
           moved = true
@@ -710,6 +734,8 @@ Item {
           dragName = ""
           hasGuideX = false
           hasGuideY = false
+          panX = 0
+          panY = 0
           syncView()
           return
         }
@@ -817,13 +843,9 @@ Item {
             onPositionChanged: function(mouse) {
               if (!pressed) return
               var p = dragArea.mapToItem(null, mouse.x, mouse.y)
-              var nx = canvas.startItemX + (p.x - canvas.pressSceneX)
-              var ny = canvas.startItemY + (p.y - canvas.pressSceneY)
-              nx = Math.max(0, Math.min(canvas.width - mon.width, nx))
-              ny = Math.max(0, Math.min(canvas.height - mon.height, ny))
-              mon.x = nx
-              mon.y = ny
-              canvas.moveDrag(modelData, mon)
+              canvas.moveDragTo(modelData, mon,
+                canvas.startItemX + (p.x - canvas.pressSceneX),
+                canvas.startItemY + (p.y - canvas.pressSceneY))
             }
 
             onReleased: canvas.endDrag(modelData)

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.6
+
+Overflow: a drag is no longer stopped by the edge of the preview.
+
+The preview was clamped to its own bounds, so a display could not reach a
+snap position that lay outside the fitted view. The bottom placements were
+the visible casualty: the display hit the bottom of the preview before it
+could reach the bottom edge or the bottom corners of another display.
+
+When a dragged display reaches an edge, the view now pans by the amount the
+display would have overflowed, and the display stays at the edge while its
+world position keeps following the pointer. The pan is reset and the view
+refitted when the drag settles. The preview is clipped so the panned
+arrangement cannot draw over the rest of the panel.
+
+Verified in the running shell with the in-page hook: dragging to the bottom
+placement panned by 12 px and dropped at the exact bottom edge; dragging to
+the bottom-right corner panned by 12 px and dropped at exactly
+`(-5199, 255)` with `corner · flush right → DP-1 · flush below → DP-1` and
+both guides.
+
 ## 0.3.5
 
 The real cause of the display jumping to the top-left when a drag started.
