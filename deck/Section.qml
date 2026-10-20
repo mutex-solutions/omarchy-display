@@ -13,9 +13,9 @@ Item {
   readonly property string detail: state ? state.detail : ""
   readonly property string icon: state ? state.icon : ""
 
-  function toggle() {
-    if (state) state.toggle()
-  }
+  // No toggle(): there is no single on/off for a display. Deck treats a
+  // section without one as read-only and opens the page on a tap, so the
+  // gesture is useful instead of dead.
 
   Loader {
     id: stateLoader

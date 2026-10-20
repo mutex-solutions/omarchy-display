@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "mutex-solutions.display",
   "name": "Display",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "mutex-solutions",
   "license": "MIT",
-  "description": "Brightness and refresh rate for Omarchy, as a bar widget or a Deck section.",
+  "description": "Monitor arrangement, mirroring and brightness for Omarchy, as a bar widget or a Deck section.",
   "kinds": ["bar-widget"],
   "entryPoints": {
     "barWidget": "Panel.qml"

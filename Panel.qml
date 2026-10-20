@@ -86,30 +86,13 @@ Panel {
             font.bold: true
           }
 
-          Rectangle {
+          Text {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            width: Style.space(34)
-            height: Style.space(18)
-            radius: height / 2
-            color: root.state && root.state.active
-              ? Util.alpha(Color.accent, 0.85)
-              : Util.alpha(Color.foreground, 0.2)
-
-            Rectangle {
-              width: Style.space(14)
-              height: width
-              radius: width / 2
-              y: (parent.height - height) / 2
-              x: root.state && root.state.active ? parent.width - width - Style.space(2) : Style.space(2)
-              color: "#ffffff"
-            }
-
-            MouseArea {
-              anchors.fill: parent
-              cursorShape: Qt.PointingHandCursor
-              onClicked: if (root.state) root.state.toggle()
-            }
+            text: root.state ? root.state.detail : ""
+            color: Util.alpha(Color.foreground, 0.45)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
           }
         }
 
