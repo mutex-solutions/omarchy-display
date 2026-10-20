@@ -48,23 +48,6 @@ Item {
     return out
   }
 
-  readonly property var reference: others.length ? others[0] : null
-
-  // Where the focused window can go: every screen except the one it is
-  // already on. Using the selected target here would offer a move to the
-  // window's own monitor whenever that monitor happens to be selected.
-  readonly property var moveTargets: {
-    if (!state) return []
-    var out = []
-    var from = state.activeWindowMonitorName
-    var list = state.enabledMonitors
-    for (var i = 0; i < list.length; i++)
-      if (list[i].name !== from) out.push(list[i])
-    return out
-  }
-
-  readonly property var windowTarget: moveTargets.length ? moveTargets[0] : null
-
   function select(name) { page.targetName = name }
 
   // Edits are staged, not applied. A drag records the target position here;
@@ -1839,82 +1822,6 @@ Item {
           canvas.cancelStaged()
         }
       }
-    }
-
-    Rule { }
-
-    // ---- windows ----
-    Section {
-      id: windowsSection
-      glyph: "▣"
-      title: "Windows"
-      visible: page.moveTargets.length > 0 || page.others.length > 0
-
-    Item {
-      width: parent.width
-      height: Style.space(28)
-      visible: page.others.length > 0
-
-      Text {
-        anchors.left: parent.left
-        anchors.leftMargin: Style.space(8)
-        anchors.right: moveChip.left
-        anchors.rightMargin: Style.space(8)
-        anchors.verticalCenter: parent.verticalCenter
-        text: page.state && page.state.activeWindowTitle !== ""
-          ? page.state.activeWindowTitle
-          : "No focused window"
-        color: page.state && page.state.activeWindowTitle !== ""
-          ? Color.foreground
-          : Util.alpha(Color.foreground, 0.4)
-        font.family: Style.font.family
-        font.pixelSize: Style.font.body
-        elide: Text.ElideRight
-      }
-
-      Chip {
-        id: moveChip
-        anchors.right: parent.right
-        anchors.rightMargin: Style.space(8)
-        anchors.verticalCenter: parent.verticalCenter
-        label: page.windowTarget ? "→ " + page.windowTarget.name : "→"
-        enabled: !!(page.state && page.state.activeWindowTitle !== "" && page.windowTarget)
-        onPicked: if (page.windowTarget) page.state.moveActiveWindowTo(page.windowTarget.name)
-      }
-    }
-
-    // Swap every window between the two screens at once. This swaps the
-    // active workspaces, so it is the entire desktop that moves, not one
-    // window, and it is its own undo.
-    Item {
-      width: parent.width
-      height: Style.space(28)
-      visible: page.others.length > 0
-
-      Text {
-        anchors.left: parent.left
-        anchors.leftMargin: Style.space(8)
-        anchors.right: swapChip.left
-        anchors.rightMargin: Style.space(8)
-        anchors.verticalCenter: parent.verticalCenter
-        text: "Swap screens"
-        color: Color.foreground
-        font.family: Style.font.family
-        font.pixelSize: Style.font.body
-        elide: Text.ElideRight
-      }
-
-      Chip {
-        id: swapChip
-        anchors.right: parent.right
-        anchors.rightMargin: Style.space(8)
-        anchors.verticalCenter: parent.verticalCenter
-        label: "⇄ " + (page.reference ? page.reference.name : "")
-        enabled: !!(page.target && page.reference)
-        onPicked: if (page.target && page.reference)
-          page.state.swapScreens(page.target.name, page.reference.name)
-      }
-    }
     }
 
   }

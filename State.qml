@@ -23,21 +23,6 @@ Item {
   property string brightnessProbeName: ""
   property string pendingBrightnessProbe: ""
 
-  // The window the compositor considers focused. The Deck panel is a layer
-  // surface and does not become the active window, so this is the window the
-  // user was working in when they opened the panel.
-  property string activeWindowTitle: ""
-  property string activeWindowClass: ""
-  property int activeWindowMonitorId: 0
-
-  // The monitor the focused window is on, by name. Resolved here rather than
-  // in the page so the page does not have to know Hyprland reports an id.
-  readonly property string activeWindowMonitorName: {
-    for (var i = 0; i < monitors.length; i++)
-      if (monitors[i].id === activeWindowMonitorId) return monitors[i].name
-    return ""
-  }
-
   readonly property bool active: true
   readonly property string label: "Display"
   readonly property string icon: "☼"
@@ -308,27 +293,6 @@ Item {
       + ', mirror = "" })')
   }
 
-  // A workspace is bound to a monitor, so moving a window to another screen
-  // means moving it to a workspace that lives there. The target's active
-  // workspace is the one the user would land on anyway.
-  //
-  // These are dispatchers, not config values: a bare hl.dsp.* call only
-  // constructs one. It has to go through hl.dispatch() to run. A rule like
-  // hl.monitor() is applied directly, which is why the two look different.
-  function moveActiveWindowTo(name) {
-    var m = byName(name)
-    if (!m || !m.activeWorkspaceId) return
-    applyLua('hl.dispatch(hl.dsp.window.move({ workspace = ' + m.activeWorkspaceId + ' }))', false)
-  }
-
-  // Swaps the active workspaces of two monitors, which moves every window on
-  // each screen to the other one in a single step.
-  function swapScreens(a, b) {
-    if (!a || !b) return
-    applyLua('hl.dispatch(hl.dsp.workspace.swap_monitors({ monitor1 = "' + a
-      + '", monitor2 = "' + b + '" }))', false)
-  }
-
   // ---------------------------------------------------------------- reading
 
   Process {
@@ -380,29 +344,6 @@ Item {
     }
   }
 
-  Process {
-    id: activeWindowProbe
-    command: ["hyprctl", "activewindow", "-j"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var w = JSON.parse(text || "{}")
-          s.activeWindowTitle = String(w.title || "")
-          s.activeWindowClass = String(w.class || "")
-          s.activeWindowMonitorId = Number(w.monitor || 0)
-        } catch (e) {
-          s.activeWindowTitle = ""
-          s.activeWindowClass = ""
-          s.activeWindowMonitorId = 0
-        }
-      }
-    }
-  }
-
-  // Brightness is per monitor. omarchy-brightness-display handles the
-  // internal backlight, Apple displays and DDC/CI for external ones, so the
-  // same control works for eDP-1 and for the ASUS over DDC.
   Process {
     id: brightnessProbe
     command: ["true"]
@@ -519,7 +460,6 @@ Item {
 
   function refresh() {
     if (!monitorProbe.running) monitorProbe.running = true
-    if (!activeWindowProbe.running) activeWindowProbe.running = true
   }
 
   // After an action, wait for the compositor to settle, re-read, then write

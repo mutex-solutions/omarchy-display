@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.19
+
+- **Window management moved out.** Moving a window and swapping screens now
+  live in the Sessions section, where they belong with workspaces. The Display
+  page is arrangement, resolution, refresh rate, scale, brightness and text
+  size. The active-window probe and actions were removed from this plugin too.
+
 ## 0.3.18
 
 Resolution, scale, text size, and per-monitor brightness, reusing Omarchy's
