@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.21
+
+- The Deck tile is neutral: a display has no on/off state, so it no longer
+  takes the selected fill that a toggleable section uses.
+
 ## 0.3.20
 
 - A **4x1 tile** (`tileFull`) lists each monitor with its resolution and

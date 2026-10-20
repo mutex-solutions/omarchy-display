@@ -14,7 +14,8 @@ Item {
 
   readonly property var state: stateLoader.item
 
-  readonly property bool active: state ? state.active : false
+  // A display has no on/off; a selected fill would claim a state it lacks.
+  readonly property bool active: false
   readonly property string label: state ? state.label : ""
   readonly property string detail: state ? state.detail : ""
   readonly property string icon: state ? state.icon : ""
