@@ -28,9 +28,13 @@ omarchy plugin add https://github.com/mutex-solutions/omarchy-display
 ## What the page does
 
 - **Layout** draws every enabled monitor to scale, placed the way Hyprland has
-  them, with room on every side to pull a display clear of the others.
-  **Drag any display freely**; the drop is applied as an exact logical-pixel
-  position.
+  them. **Drag any display freely**; the drop is staged, not applied. A
+  pending edit is shown in the preview and nothing happens to the live
+  arrangement until **Apply** is pressed. **Cancel** discards every staged
+  edit, and **Fit** recentres a panned preview.
+- **Drag the empty part of the preview to pan it.** A display dragged past an
+  edge pans the view automatically, so snap positions outside the fitted view
+  are still reachable.
 - **Snapping** uses complete placements relative to the other displays, so a
   snap always produces a placement that touches:
   - edge to edge: within **12 screen px**

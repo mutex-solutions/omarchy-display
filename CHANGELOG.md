@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.7
+
+Staged edits and a draggable preview.
+
+- **Drops are staged, not applied.** A drag records the target position in a
+  pending overlay; the live monitors are untouched until **Apply**. Multiple
+  displays can be staged before applying. **Cancel** discards them all.
+- The pending overlay feeds the geometry, the snap candidates and the
+  validity check, so the preview and the invalid-layout strip describe what
+  Apply would do, not the old arrangement.
+- Apply holds the preview in place until the compositor reports the new
+  positions, then drops the staged copy, so there is no frame where the
+  preview falls back to the old state.
+- **Drag the empty part of the preview to pan it**; **Fit** resets the pan.
+  The automatic overflow pan remains separate and resets on drop.
+- The Apply label becomes **Apply anyway** when the staged layout is invalid.
+
 ## 0.3.6
 
 Overflow: a drag is no longer stopped by the edge of the preview.

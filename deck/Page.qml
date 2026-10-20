@@ -58,6 +58,38 @@ Item {
 
   function select(name) { page.targetName = name }
 
+  // Edits are staged, not applied. A drag records the target position here;
+  // Apply pushes every staged display to Hyprland, Cancel throws them away.
+  // Nothing touches the live arrangement until Apply is pressed.
+  property var pending: ({})
+  readonly property int pendingCount: {
+    var n = 0
+    for (var k in pending) n++
+    return n
+  }
+
+  function posX(m) {
+    return pending[m.name] !== undefined ? pending[m.name].x : m.x
+  }
+  function posY(m) {
+    return pending[m.name] !== undefined ? pending[m.name].y : m.y
+  }
+
+  function stage(name, x, y) {
+    var p = {}
+    for (var k in pending) p[k] = pending[k]
+    p[name] = { x: x, y: y }
+    pending = p
+  }
+
+  function clearPending() { pending = ({}) }
+
+  function applyPending() {
+    if (!state || pendingCount === 0) return
+    for (var k in pending) state.moveTo(k, pending[k].x, pending[k].y)
+    canvas.holdForApply()
+  }
+
   // The host injects `state` after the page instance exists, so this is the
   // reliable moment to re-read: the page can open long after the last poll.
   onStateChanged: if (state) state.refresh()
@@ -275,24 +307,24 @@ Item {
       // ---- world bounds and transform ----
       readonly property real minX: {
         var v = 0; var first = true
-        for (var i = 0; i < view.length; i++) { if (first || view[i].x < v) { v = view[i].x; first = false } }
+        for (var i = 0; i < view.length; i++) { if (first || page.posX(view[i]) < v) { v = page.posX(view[i]); first = false } }
         return first ? 0 : v
       }
       readonly property real minY: {
         var v = 0; var first = true
-        for (var i = 0; i < view.length; i++) { if (first || view[i].y < v) { v = view[i].y; first = false } }
+        for (var i = 0; i < view.length; i++) { if (first || page.posY(view[i]) < v) { v = page.posY(view[i]); first = false } }
         return first ? 0 : v
       }
       readonly property real spanW: {
         var maxX = minX
         for (var i = 0; i < view.length; i++)
-          maxX = Math.max(maxX, view[i].x + page.state.logicalW(view[i]))
+          maxX = Math.max(maxX, page.posX(view[i]) + page.state.logicalW(view[i]))
         return Math.max(1, maxX - minX)
       }
       readonly property real spanH: {
         var maxY = minY
         for (var i = 0; i < view.length; i++)
-          maxY = Math.max(maxY, view[i].y + page.state.logicalH(view[i]))
+          maxY = Math.max(maxY, page.posY(view[i]) + page.state.logicalH(view[i]))
         return Math.max(1, maxY - minY)
       }
 
@@ -319,10 +351,19 @@ Item {
       readonly property real offsetX: (width - spanW * fit) / 2
       readonly property real offsetY: (height - spanH * fit) / 2
 
-      function canvasX(wx) { return offsetX + panX + (wx - minX) * fit }
-      function canvasY(wy) { return offsetY + panY + (wy - minY) * fit }
-      function worldX(cx) { return (cx - offsetX - panX) / fit + minX }
-      function worldY(cy) { return (cy - offsetY - panY) / fit + minY }
+      function canvasX(wx) { return offsetX + basePanX + overflowX + (wx - minX) * fit }
+      function canvasY(wy) { return offsetY + basePanY + overflowY + (wy - minY) * fit }
+      function worldX(cx) { return (cx - offsetX - basePanX - overflowX) / fit + minX }
+      function worldY(cy) { return (cy - offsetY - basePanY - overflowY) / fit + minY }
+
+      readonly property bool panned: Math.abs(basePanX) > 0.5 || Math.abs(basePanY) > 0.5
+
+      function resetPan() {
+        basePanX = 0
+        basePanY = 0
+        overflowX = 0
+        overflowY = 0
+      }
 
       // ---- drag state ----
       property bool dragging: false
@@ -333,8 +374,13 @@ Item {
       property real startItemY: 0
       property real pressSceneX: 0
       property real pressSceneY: 0
-      property real panX: 0
-      property real panY: 0
+      // basePan is the user's manual pan of the preview. overflow is the
+      // transient shift added while a drag pushes past an edge; it is reset
+      // when the drag settles, the user's pan is not.
+      property real basePanX: 0
+      property real basePanY: 0
+      property real overflowX: 0
+      property real overflowY: 0
       property real freeX: 0
       property real freeY: 0
       property real dropX: 0
@@ -366,11 +412,44 @@ Item {
           canvas.locked = false
           canvas.lockedSnap = null
           canvas.outSince = 0
-          canvas.panX = 0
-          canvas.panY = 0
+          canvas.overflowX = 0
+          canvas.overflowY = 0
           canvas.syncView()
           canvas.refreshValidity("", 0, 0)
         }
+      }
+
+      // On Apply, keep the bindings off until the compositor has reported the
+      // new positions, so the preview cannot fall back to the old state for a
+      // frame. The staged copy is dropped once that refresh has landed.
+      Timer {
+        id: pendingClear
+        interval: 1200
+        onTriggered: page.clearPending()
+      }
+
+      function holdForApply() {
+        dragging = true
+        graceTimer.stop()
+        settleDrag.restart()
+        pendingClear.restart()
+      }
+
+      function cancelStaged() {
+        settleDrag.stop()
+        pendingClear.stop()
+        dragging = false
+        dragItem = null
+        dragName = ""
+        locked = false
+        lockedSnap = null
+        outSince = 0
+        hasGuideX = false
+        hasGuideY = false
+        overflowX = 0
+        overflowY = 0
+        syncView()
+        refreshValidity("", 0, 0)
       }
 
 
@@ -430,7 +509,7 @@ Item {
           var o = view[j]
           if (o.name === name) continue
           if (rectsOverlap({ x: x, y: y, w: w, h: h },
-                           { x: o.x, y: o.y, w: page.state.logicalW(o), h: page.state.logicalH(o) }))
+                           { x: page.posX(o), y: page.posY(o), w: page.state.logicalW(o), h: page.state.logicalH(o) }))
             return true
         }
         return false
@@ -442,8 +521,8 @@ Item {
           var m = view[i]
           rects.push({
             name: m.name,
-            x: (dragName !== "" && m.name === dragName) ? dx : m.x,
-            y: (dragName !== "" && m.name === dragName) ? dy : m.y,
+            x: (dragName !== "" && m.name === dragName) ? dx : page.posX(m),
+            y: (dragName !== "" && m.name === dragName) ? dy : page.posY(m),
             w: page.state.logicalW(m),
             h: page.state.logicalH(m)
           })
@@ -481,61 +560,63 @@ Item {
         var ow = page.state.logicalW(O)
         var oh = page.state.logicalH(O)
 
+        var ox = page.posX(O)
+        var oy = page.posY(O)
         var yAligned = [
-          [O.y, O.y, "top edges"],
-          [O.y + oh - dh, O.y + oh, "bottom edges"],
-          [O.y + (oh - dh) / 2, O.y + oh / 2, "centred"]
+          [oy, oy, "top edges"],
+          [oy + oh - dh, oy + oh, "bottom edges"],
+          [oy + (oh - dh) / 2, oy + oh / 2, "centred"]
         ]
         var xAligned = [
-          [O.x, O.x, "left edges"],
-          [O.x + ow - dw, O.x + ow, "right edges"],
-          [O.x + (ow - dw) / 2, O.x + ow / 2, "centred"]
+          [ox, ox, "left edges"],
+          [ox + ow - dw, ox + ow, "right edges"],
+          [ox + (ow - dw) / 2, ox + ow / 2, "centred"]
         ]
-        var yOverlaps = freeY < O.y + oh && freeY + dh > O.y
-        var xOverlaps = freeX < O.x + ow && freeX + dw > O.x
+        var yOverlaps = freeY < oy + oh && freeY + dh > oy
+        var xOverlaps = freeX < ox + ow && freeX + dw > ox
 
         for (var i = 0; i < yAligned.length; i++) {
           var ya = yAligned[i]
-          out.push(cand(O.x + ow, ya[0], O.x + ow, ya[1], "flush right", ya[2], O.name))
-          out.push(cand(O.x - dw, ya[0], O.x, ya[1], "flush left", ya[2], O.name))
+          out.push(cand(ox + ow, ya[0], ox + ow, ya[1], "flush right", ya[2], O.name))
+          out.push(cand(ox - dw, ya[0], ox, ya[1], "flush left", ya[2], O.name))
         }
         if (yOverlaps) {
-          out.push(cand(O.x + ow, freeY, O.x + ow, null, "flush right", null, O.name))
-          out.push(cand(O.x - dw, freeY, O.x, null, "flush left", null, O.name))
-        } else if (freeY >= O.y + oh || freeY + dh <= O.y) {
+          out.push(cand(ox + ow, freeY, ox + ow, null, "flush right", null, O.name))
+          out.push(cand(ox - dw, freeY, ox, null, "flush left", null, O.name))
+        } else if (freeY >= oy + oh || freeY + dh <= oy) {
           // Just past either end of the edge: clamp into a minimum overlap,
           // so the connection is still an edge with length, not a point.
-          var yPast = freeY >= O.y + oh
-            ? O.y + oh - minOverlap
-            : O.y - dh + minOverlap
-          out.push(cand(O.x + ow, yPast, O.x + ow, null, "flush right", null, O.name))
-          out.push(cand(O.x - dw, yPast, O.x, null, "flush left", null, O.name))
+          var yPast = freeY >= oy + oh
+            ? oy + oh - minOverlap
+            : oy - dh + minOverlap
+          out.push(cand(ox + ow, yPast, ox + ow, null, "flush right", null, O.name))
+          out.push(cand(ox - dw, yPast, ox, null, "flush left", null, O.name))
         }
 
         for (var j = 0; j < xAligned.length; j++) {
           var xa = xAligned[j]
-          out.push(cand(xa[0], O.y + oh, xa[1], O.y + oh, xa[2], "flush below", O.name))
-          out.push(cand(xa[0], O.y - dh, xa[1], O.y, xa[2], "flush above", O.name))
+          out.push(cand(xa[0], oy + oh, xa[1], oy + oh, xa[2], "flush below", O.name))
+          out.push(cand(xa[0], oy - dh, xa[1], oy, xa[2], "flush above", O.name))
         }
         if (xOverlaps) {
-          out.push(cand(freeX, O.y + oh, null, O.y + oh, null, "flush below", O.name))
-          out.push(cand(freeX, O.y - dh, null, O.y, null, "flush above", O.name))
-        } else if (freeX >= O.x + ow || freeX + dw <= O.x) {
-          var xPast = freeX >= O.x + ow
-            ? O.x + ow - minOverlap
-            : O.x - dw + minOverlap
-          out.push(cand(xPast, O.y + oh, null, O.y + oh, null, "flush below", O.name))
-          out.push(cand(xPast, O.y - dh, null, O.y, null, "flush above", O.name))
+          out.push(cand(freeX, oy + oh, null, oy + oh, null, "flush below", O.name))
+          out.push(cand(freeX, oy - dh, null, oy, null, "flush above", O.name))
+        } else if (freeX >= ox + ow || freeX + dw <= ox) {
+          var xPast = freeX >= ox + ow
+            ? ox + ow - minOverlap
+            : ox - dw + minOverlap
+          out.push(cand(xPast, oy + oh, null, oy + oh, null, "flush below", O.name))
+          out.push(cand(xPast, oy - dh, null, oy, null, "flush above", O.name))
         }
 
         // Corner to corner: both edges flush, corners meet at a point.
-        out.push(cand(O.x + ow, O.y + oh, O.x + ow, O.y + oh,
+        out.push(cand(ox + ow, oy + oh, ox + ow, oy + oh,
                       "flush right", "flush below", O.name))
-        out.push(cand(O.x - dw, O.y + oh, O.x, O.y + oh,
+        out.push(cand(ox - dw, oy + oh, ox, oy + oh,
                       "flush left", "flush below", O.name))
-        out.push(cand(O.x + ow, O.y - dh, O.x + ow, O.y,
+        out.push(cand(ox + ow, oy - dh, ox + ow, oy,
                       "flush right", "flush above", O.name))
-        out.push(cand(O.x - dw, O.y - dh, O.x, O.y,
+        out.push(cand(ox - dw, oy - dh, ox, oy,
                       "flush left", "flush above", O.name))
 
         return out
@@ -594,7 +675,7 @@ Item {
             var oo = view[q]
             if (oo.name === D.name) continue
             if (rectsOverlap({ x: cc.x, y: cc.y, w: dw, h: dh },
-                             { x: oo.x, y: oo.y, w: page.state.logicalW(oo), h: page.state.logicalH(oo) })) {
+                             { x: page.posX(oo), y: page.posY(oo), w: page.state.logicalW(oo), h: page.state.logicalH(oo) })) {
               hits = true
               break
             }
@@ -703,10 +784,10 @@ Item {
         var hiX = width - margin - item.width
         var loY = margin
         var hiY = height - margin - item.height
-        if (nx < loX) { panX -= (nx - loX); nx = loX }
-        else if (nx > hiX) { panX -= (nx - hiX); nx = hiX }
-        if (ny < loY) { panY -= (ny - loY); ny = loY }
-        else if (ny > hiY) { panY -= (ny - hiY); ny = hiY }
+        if (nx < loX) { overflowX -= (nx - loX); nx = loX }
+        else if (nx > hiX) { overflowX -= (nx - hiX); nx = hiX }
+        if (ny < loY) { overflowY -= (ny - loY); ny = loY }
+        else if (ny > hiY) { overflowY -= (ny - hiY); ny = hiY }
         item.x = nx
         item.y = ny
         moveDrag(m, item)
@@ -734,12 +815,12 @@ Item {
           dragName = ""
           hasGuideX = false
           hasGuideY = false
-          panX = 0
-          panY = 0
+          overflowX = 0
+          overflowY = 0
           syncView()
           return
         }
-        page.state.moveTo(m.name, dropX, dropY)
+        page.stage(m.name, dropX, dropY)
         dragItem = null
         dragName = ""
         hasGuideX = false
@@ -752,6 +833,34 @@ Item {
         color: Util.alpha(Color.foreground, 0.03)
         border.width: 1
         border.color: Util.alpha(Color.foreground, 0.12)
+      }
+
+      // Drag the empty part of the preview to pan it. The displays are drawn
+      // above this and handle their own presses.
+      MouseArea {
+        id: panArea
+        anchors.fill: parent
+        preventStealing: true
+        cursorShape: panArea.pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+        property real pressX: 0
+        property real pressY: 0
+        property real startPanX: 0
+        property real startPanY: 0
+
+        onPressed: function(mouse) {
+          var p = mapToItem(null, mouse.x, mouse.y)
+          pressX = p.x
+          pressY = p.y
+          startPanX = canvas.basePanX
+          startPanY = canvas.basePanY
+        }
+
+        onPositionChanged: function(mouse) {
+          if (!pressed) return
+          var p = mapToItem(null, mouse.x, mouse.y)
+          canvas.basePanX = startPanX + (p.x - pressX)
+          canvas.basePanY = startPanY + (p.y - pressY)
+        }
       }
 
       Repeater {
@@ -779,14 +888,14 @@ Item {
           Binding {
             target: mon
             property: "x"
-            value: canvas.canvasX(modelData.x)
+            value: canvas.canvasX(page.posX(modelData))
             when: !canvas.dragging
             restoreMode: Binding.RestoreNone
           }
           Binding {
             target: mon
             property: "y"
-            value: canvas.canvasY(modelData.y)
+            value: canvas.canvasY(page.posY(modelData))
             when: !canvas.dragging
             restoreMode: Binding.RestoreNone
           }
@@ -929,6 +1038,32 @@ Item {
         color: Util.alpha(Color.foreground, 0.4)
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
+      }
+    }
+
+    Row {
+      width: parent.width
+      height: Style.space(26)
+      spacing: Style.space(6)
+      visible: page.pendingCount > 0 || canvas.panned
+
+      Chip {
+        visible: page.pendingCount > 0
+        label: canvas.invalidText !== "" ? "Apply anyway" : "Apply"
+        onPicked: page.applyPending()
+      }
+      Chip {
+        visible: page.pendingCount > 0
+        label: "Cancel"
+        onPicked: {
+          page.clearPending()
+          canvas.cancelStaged()
+        }
+      }
+      Chip {
+        visible: canvas.panned
+        label: "Fit"
+        onPicked: canvas.resetPan()
       }
     }
 
