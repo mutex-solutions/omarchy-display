@@ -130,12 +130,18 @@ Item {
                  label: rateLabel(rate) })
     }
     var ck = Number(m.rate).toFixed(2)
-    if (!seen[ck])
+    if (!seen[ck]) {
+      seen[ck] = true
       out.push({ mode: currentMode(m), rate: Number(m.rate), label: rateLabel(m.rate) })
+    }
     // The XPS 13 panel advertises only 120 Hz but accepts its native
     // 2560x1600@60 mode. Without this fallback the 120/60 choice is invisible.
-    if (isInternal(m.name) && !seen["60.00"])
+    // The seen check must include the current-mode entry above, or a live
+    // 60 Hz rate would be listed twice.
+    if (isInternal(m.name) && !seen["60.00"]) {
+      seen["60.00"] = true
       out.push({ mode: res + "@60", rate: 60, label: rateLabel(60) })
+    }
     out.sort(function(a, b) { return a.rate - b.rate })
     return out
   }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.17
+
+- Duplicate rate entry fixed. When the internal panel was already at 60 Hz,
+  the current-mode entry added 60 and did not mark it as seen, so the internal
+  60 Hz fallback added a second 60. The current entry now marks its rate seen;
+  eDP-1 lists 60 and 120 once each.
+
 ## 0.3.16
 
 - The confirmation row says **Pending changes** before Apply/Cancel, so a
