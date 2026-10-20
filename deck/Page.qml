@@ -1532,6 +1532,14 @@ Item {
       spacing: Style.space(6)
       visible: page.pendingCount > 0
 
+      Text {
+        height: parent.height
+        verticalAlignment: Text.AlignVCenter
+        text: "Pending changes"
+        color: Util.alpha(Color.foreground, 0.45)
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
       Chip {
         label: canvas.invalidText !== "" ? "Apply anyway" : "Apply"
         onPicked: page.applyPending()

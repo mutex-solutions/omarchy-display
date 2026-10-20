@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.16
+
+- The confirmation row says **Pending changes** before Apply/Cancel, so a
+  staged layout is named in the UI rather than implied by two buttons.
+
 ## 0.3.15
 
 Refresh rates apply when chosen.
