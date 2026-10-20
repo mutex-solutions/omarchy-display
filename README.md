@@ -57,7 +57,13 @@ omarchy plugin add https://github.com/mutex-solutions/omarchy-display
   accepts gaps and overlaps), but a red strip says what is wrong, and the
   offending display is outlined while it is dragged.
 - **Displays** lists every output with its mode and refresh rate. Pick one to
-  arrange; the switch turns an output on or off.
+  arrange; the switch turns an output on or off. **Refresh rate** selects from
+  the modes the panel actually advertises at its current resolution, read from
+  `hyprctl`'s `availableModes`. The mode in use is included even when the panel
+  does not advertise it (the XPS 13 accepts a custom 60 Hz mode that is absent
+  from the list). A rate change is staged like a position: Apply confirms,
+  Cancel discards.
+- **Sections collapse** from their headers; the chevron shows the state.
 - **Mirror** shows the target on the first other enabled monitor.
 - **Windows** moves windows between screens. **Move** sends the focused window
   to the other monitor (a window belongs to a workspace, and a workspace

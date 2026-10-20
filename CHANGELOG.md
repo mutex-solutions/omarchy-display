@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.10
+
+Collapsible sections and a real refresh-rate picker.
+
+- **Sections are collapsible** from their header; Displays, Windows and
+  Brightness each carry a chevron. The layout preview stays open.
+- **Refresh rate** for the selected display, read from the compositor's
+  `availableModes` at the current resolution. DP-1 advertises 12 rates here,
+  including 59.94 and 159.98. The mode in use is included even when the panel
+  does not advertise it, so a custom 60 Hz mode is not invisible.
+- A rate choice is **staged** like a position; Apply applies mode and position
+  in one `hl.monitor` rule, Cancel discards it. Selecting a monitor resets the
+  open rate list.
+- The Displays list shows the staged rate for a display until it is applied or
+  cancelled.
+
 ## 0.3.9
 
 Fit and refit behaviour.

@@ -83,6 +83,47 @@ Item {
     return m.w + "x" + m.h + "@" + Math.round(m.rate)
   }
 
+  function currentMode(m) {
+    return m ? modeString(m) : ""
+  }
+
+  function rateLabel(rate) {
+    var r = Math.round(Number(rate) * 100) / 100
+    return (Math.abs(r - Math.round(r)) < 0.005 ? String(Math.round(r)) : r.toFixed(2)) + " Hz"
+  }
+
+  function modeRateLabel(mode) {
+    var p = String(mode).match(/@([0-9.]+)/)
+    return p ? rateLabel(Number(p[1])) : ""
+  }
+
+  // Refresh rates the panel advertises at its CURRENT resolution. The mode in
+  // use is included even when the panel does not advertise it (the XPS 13
+  // accepts a custom 60 Hz mode that is absent from availableModes).
+  function ratesFor(name) {
+    var m = byName(name)
+    if (!m) return []
+    var out = []
+    var seen = {}
+    var res = m.w + "x" + m.h
+    for (var i = 0; i < m.modes.length; i++) {
+      var ms = String(m.modes[i])
+      var p = ms.match(/^([0-9]+)x([0-9]+)@([0-9.]+)Hz$/)
+      if (!p) continue
+      if (p[1] + "x" + p[2] !== res) continue
+      var rate = Number(p[3])
+      var key = rate.toFixed(2)
+      if (seen[key]) continue
+      seen[key] = true
+      out.push({ mode: ms, rate: rate, label: rateLabel(rate) })
+    }
+    var ck = Number(m.rate).toFixed(2)
+    if (!seen[ck])
+      out.push({ mode: currentMode(m), rate: Number(m.rate), label: rateLabel(m.rate) })
+    out.sort(function(a, b) { return a.rate - b.rate })
+    return out
+  }
+
   // ---------------------------------------------------------------- actions
 
   // Every action is one hyprctl eval. Fire and forget: state is re-read after
@@ -95,6 +136,18 @@ Item {
     // it (and must not imply the arrangement changed).
     if (touchesLayout !== false) pendingPersist = true
     settleTimer.restart()
+  }
+
+  // Mode, position and scale in one rule. The mode is part of the rule so a
+  // staged rate and a staged position are applied together, not in two steps
+  // that can briefly disagree.
+  function applyArrangement(name, x, y, mode) {
+    var m = byName(name)
+    if (!m) return
+    var md = (mode && String(mode) !== "") ? String(mode) : modeString(m)
+    applyLua('hl.monitor({ output = "' + name + '", mode = "' + md
+      + '", position = "' + Math.round(x) + "x" + Math.round(y)
+      + '", scale = ' + m.scale + ', mirror = "" })')
   }
 
   // Explicit position, in logical pixels. `mirror = ""` makes arranging an
@@ -187,6 +240,8 @@ Item {
               y: Number(m.y || 0),
               scale: Number(m.scale || 1),
               rate: Number(m.refreshRate || 0),
+              modes: (m.availableModes && m.availableModes.length)
+                ? m.availableModes.slice() : [],
               activeWorkspaceId: Number((m.activeWorkspace && m.activeWorkspace.id) || 0),
               disabled: m.disabled === true,
               // Hyprland reports the mirror target as a monitor *id*, not a

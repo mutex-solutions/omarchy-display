@@ -28,6 +28,9 @@ Item {
     return state.focusedMonitor
   }
 
+  readonly property string selectedName: target ? target.name : ""
+  onSelectedNameChanged: rateOpen = false
+
   // Monitors the target can be compared with. A mirrored output is not part
   // of the desktop, so it is not part of the arrangement.
   readonly property var others: {
@@ -75,18 +78,57 @@ Item {
     return pending[m.name] !== undefined ? pending[m.name].y : m.y
   }
 
-  function stage(name, x, y) {
+  function stage(name, x, y, mode) {
     var p = {}
     for (var k in pending) p[k] = pending[k]
-    p[name] = { x: x, y: y }
+    var old = pending[name]
+    p[name] = {
+      x: x,
+      y: y,
+      mode: (mode !== undefined && mode !== null && String(mode) !== "")
+        ? String(mode)
+        : (old && old.mode ? old.mode : null)
+    }
     pending = p
+  }
+
+  property bool rateOpen: false
+
+  function pendingMode(m) {
+    return (pending[m.name] && pending[m.name].mode) ? pending[m.name].mode : ""
+  }
+  function targetModeString() {
+    if (!target || !state) return ""
+    var pm = pendingMode(target)
+    return pm !== "" ? pm : state.currentMode(target)
+  }
+  function targetRateLabel() {
+    return state ? state.modeRateLabel(targetModeString()) : ""
+  }
+  function targetRates() {
+    return (state && target) ? state.ratesFor(target.name) : []
+  }
+  function rateTextFor(m) {
+    if (!state) return ""
+    var pm = pendingMode(m)
+    return pm !== "" ? state.modeRateLabel(pm) : (Math.round(Number(m.rate)) + " Hz")
+  }
+  function stageRate(mode) {
+    if (!target) return
+    stage(target.name, posX(target), posY(target), mode)
+    rateOpen = false
   }
 
   function clearPending() { pending = ({}) }
 
   function applyPending() {
     if (!state || pendingCount === 0) return
-    for (var k in pending) state.moveTo(k, pending[k].x, pending[k].y)
+    for (var k in pending) {
+      var p = pending[k]
+      var m = state.byName(k)
+      state.applyArrangement(k, p.x, p.y,
+        p.mode ? p.mode : (m ? state.currentMode(m) : ""))
+    }
     canvas.holdForApply()
   }
 
@@ -155,6 +197,79 @@ Item {
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
       }
+    }
+  }
+
+  // A collapsible section: a header row that toggles its body. The body of a
+  // Section is where declared children go.
+  component Section: Column {
+    id: sec
+    property string glyph: ""
+    property string title: ""
+    property string value: ""
+    property bool expanded: true
+    default property alias content: body.data
+    width: parent ? parent.width : 0
+    spacing: Style.space(2)
+
+    Item {
+      width: parent.width
+      height: Style.space(24)
+
+      MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: sec.expanded = !sec.expanded
+      }
+
+      Text {
+        id: secGlyph
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(14)
+        text: sec.glyph
+        color: Color.accent
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      Text {
+        anchors.left: secGlyph.right
+        anchors.leftMargin: Style.space(6)
+        anchors.verticalCenter: parent.verticalCenter
+        text: sec.title.toUpperCase()
+        color: Util.alpha(Color.foreground, 0.45)
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+        font.letterSpacing: 1.5
+      }
+
+      Text {
+        id: secChevron
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        text: sec.expanded ? "▾" : "▸"
+        color: Util.alpha(Color.foreground, 0.45)
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+
+      Text {
+        anchors.right: secChevron.left
+        anchors.rightMargin: Style.space(6)
+        anchors.verticalCenter: parent.verticalCenter
+        text: sec.value
+        color: Util.alpha(Color.foreground, 0.45)
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+    }
+
+    Column {
+      id: body
+      width: parent.width
+      spacing: Style.space(2)
+      visible: sec.expanded
     }
   }
 
@@ -1155,13 +1270,12 @@ Item {
     }
 
     // ---- every display: pick one, switch one off ----
-    Head {
+    Section {
+      id: displaysSection
       glyph: "☰"
       title: "Displays"
       value: page.state ? String(page.state.monitors.length) : "0"
-      gap: Style.space(4)
       visible: page.state ? page.state.monitors.length > 1 : false
-    }
 
     Repeater {
       model: page.state ? page.state.monitors : []
@@ -1208,7 +1322,7 @@ Item {
             ? "OFF"
             : (modelData.mirrorOf !== "none"
                 ? "MIRROR · " + modelData.mirrorOf
-                : modelData.w + "×" + modelData.h + " · " + Math.round(modelData.rate) + " Hz")
+                : modelData.w + "×" + modelData.h + " · " + page.rateTextFor(modelData))
         }
 
         Switch {
@@ -1217,6 +1331,81 @@ Item {
           anchors.verticalCenter: parent.verticalCenter
           on: !modelData.disabled
           onToggled: page.state.setDisabled(modelData.name, !modelData.disabled)
+        }
+      }
+    }
+      // Refresh rate of the selected display, chosen from the modes the panel
+      // actually advertises at its current resolution.
+      Item {
+        width: parent.width
+        height: Style.space(30)
+        visible: page.target && page.targetRates().length > 0
+
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: page.rateOpen = !page.rateOpen
+        }
+
+        Text {
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: "Refresh rate"
+          color: Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.body
+        }
+
+        Text {
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: page.targetRateLabel() + "  ▾"
+          color: Util.alpha(Color.foreground, 0.7)
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      Column {
+        width: parent.width
+        spacing: 0
+        visible: page.rateOpen
+
+        Repeater {
+          model: page.targetRates()
+
+          delegate: Item {
+            required property var modelData
+            readonly property bool current: modelData.label === page.targetRateLabel()
+
+            width: col.width
+            height: Style.space(26)
+
+            Rectangle {
+              anchors.fill: parent
+              color: parent.current
+                ? Util.alpha(Color.accent, Style.selectedFillAlpha)
+                : "transparent"
+            }
+
+            Text {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(20)
+              anchors.verticalCenter: parent.verticalCenter
+              text: modelData.label
+              color: parent.current ? Color.accent : Color.foreground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: page.stageRate(modelData.mode)
+            }
+          }
         }
       }
     }
@@ -1255,16 +1444,12 @@ Item {
     Rule { }
 
     // ---- windows ----
-    Head {
+    Section {
+      id: windowsSection
       glyph: "▣"
       title: "Windows"
-      gap: Style.space(2)
       visible: page.moveTargets.length > 0 || page.others.length > 0
-    }
 
-    // Move the focused window to the other monitor. A window belongs to a
-    // workspace, and a workspace belongs to a monitor, so this moves it to
-    // the workspace that screen is already showing.
     Item {
       width: parent.width
       height: Style.space(28)
@@ -1330,16 +1515,16 @@ Item {
           page.state.swapScreens(page.target.name, page.reference.name)
       }
     }
+    }
 
     Rule { }
 
     // ---- brightness ----
-    Head {
+    Section {
+      id: brightnessSection
       glyph: "☼"
       title: "Brightness"
       visible: page.state ? page.state.brightnessAvailable : false
-      gap: Style.space(4)
-    }
 
     Item {
       width: parent.width
@@ -1414,5 +1599,7 @@ Item {
         }
       }
     }
+    }
+
   }
 }
