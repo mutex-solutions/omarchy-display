@@ -291,6 +291,17 @@ Item {
       readonly property var live: page.state ? page.state.layoutMonitors : []
       property var view: []
       property bool pendingViewSync: false
+      property bool pendingValid: true
+
+      // The viewport follows the live arrangement, and a staged position only
+      // once the staged layout is valid. An invalid placement must not drag
+      // the whole preview out to chase it.
+      function fitX(m) {
+        return (pendingValid && page.pending[m.name] !== undefined) ? page.posX(m) : m.x
+      }
+      function fitY(m) {
+        return (pendingValid && page.pending[m.name] !== undefined) ? page.posY(m) : m.y
+      }
       readonly property real pad: Style.space(4)
 
       // Snap distances, in screen pixels. An edge connection is generous, a
@@ -307,24 +318,24 @@ Item {
       // ---- world bounds and transform ----
       readonly property real minX: {
         var v = 0; var first = true
-        for (var i = 0; i < view.length; i++) { if (first || page.posX(view[i]) < v) { v = page.posX(view[i]); first = false } }
+        for (var i = 0; i < view.length; i++) { if (first || canvas.fitX(view[i]) < v) { v = canvas.fitX(view[i]); first = false } }
         return first ? 0 : v
       }
       readonly property real minY: {
         var v = 0; var first = true
-        for (var i = 0; i < view.length; i++) { if (first || page.posY(view[i]) < v) { v = page.posY(view[i]); first = false } }
+        for (var i = 0; i < view.length; i++) { if (first || canvas.fitY(view[i]) < v) { v = canvas.fitY(view[i]); first = false } }
         return first ? 0 : v
       }
       readonly property real spanW: {
         var maxX = minX
         for (var i = 0; i < view.length; i++)
-          maxX = Math.max(maxX, page.posX(view[i]) + page.state.logicalW(view[i]))
+          maxX = Math.max(maxX, canvas.fitX(view[i]) + page.state.logicalW(view[i]))
         return Math.max(1, maxX - minX)
       }
       readonly property real spanH: {
         var maxY = minY
         for (var i = 0; i < view.length; i++)
-          maxY = Math.max(maxY, page.posY(view[i]) + page.state.logicalH(view[i]))
+          maxY = Math.max(maxY, canvas.fitY(view[i]) + page.state.logicalH(view[i]))
         return Math.max(1, maxY - minY)
       }
 
@@ -351,8 +362,16 @@ Item {
       // scale is what is actually drawn, and it is the only value the
       // transform, the rectangle sizes and the snap distances use.
       readonly property real fit: Math.max(0.0001, Math.min(availW / worldW, availH / worldH))
+      // The fit follows the arrangement, which can change on its own; animate
+      // it so a refit is a move, not a jump. Zoom stays immediate.
+      property real fitAnimated: fit
+      property bool fitSeen: false
+      Behavior on fitAnimated {
+        enabled: canvas.fitSeen
+        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+      }
       property real zoom: 1
-      readonly property real scale: Math.max(0.0001, fit * zoom)
+      readonly property real scale: Math.max(0.0001, fitAnimated * zoom)
       readonly property real offsetX: (width - spanW * scale) / 2
       readonly property real offsetY: (height - spanH * scale) / 2
 
@@ -374,11 +393,12 @@ Item {
       // Zoom about a point in canvas coordinates, so the display under the
       // pointer stays under it.
       function zoomAt(factor, px, py) {
+        if (dragging) return
         var nz = Math.max(0.25, Math.min(6, zoom * factor))
         if (Math.abs(nz - zoom) < 0.0001) return
         var wx = worldX(px)
         var wy = worldY(py)
-        var ns = fit * nz
+        var ns = fitAnimated * nz
         var nox = (width - spanW * ns) / 2
         var noy = (height - spanH * ns) / 2
         basePanX = px - nox - (wx - minX) * ns
@@ -404,6 +424,14 @@ Item {
       property real basePanY: 0
       property real overflowX: 0
       property real overflowY: 0
+      Behavior on overflowX {
+        enabled: !canvas.dragging
+        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+      }
+      Behavior on overflowY {
+        enabled: !canvas.dragging
+        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+      }
       property real freeX: 0
       property real freeY: 0
       property real dropX: 0
@@ -448,7 +476,10 @@ Item {
       Timer {
         id: pendingClear
         interval: 1200
-        onTriggered: page.clearPending()
+        onTriggered: {
+          page.clearPending()
+          canvas.refreshValidity("", 0, 0)
+        }
       }
 
       function holdForApply() {
@@ -489,6 +520,17 @@ Item {
       function syncView() {
         if (dragging) { pendingViewSync = true; return }
         pendingViewSync = false
+        // A display can disappear (unplugged, disabled, mirrored); its staged
+        // position must not linger and be applied to a screen that is gone.
+        var names = {}
+        for (var i = 0; i < live.length; i++) names[live[i].name] = true
+        var pruned = {}
+        var dropped = false
+        for (var k in page.pending) {
+          if (names[k]) pruned[k] = page.pending[k]
+          else dropped = true
+        }
+        if (dropped) page.pending = pruned
         if (sameView(live, view)) return
         view = live.slice()
       }
@@ -496,6 +538,7 @@ Item {
       onLiveChanged: {
         syncView()
         refreshValidity("", 0, 0)
+        if (!canvas.fitSeen && canvas.view.length > 0) canvas.fitSeen = true
       }
 
       Component.onCompleted: syncView()
@@ -564,6 +607,8 @@ Item {
           }
         }
         invalidText = issues.join(" · ")
+        if (!dragging)
+          pendingValid = (page.pendingCount === 0) || (issues.length === 0)
       }
 
       // ------------------------------------------------------ candidates
@@ -848,7 +893,11 @@ Item {
         dragName = ""
         hasGuideX = false
         hasGuideY = false
-        settleDrag.restart()
+        dragging = false
+        overflowX = 0
+        overflowY = 0
+        syncView()
+        refreshValidity("", 0, 0)
       }
 
       WheelHandler {

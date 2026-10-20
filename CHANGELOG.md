@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.9
+
+Fit and refit behaviour.
+
+- An **invalid staged layout no longer moves the view**. The fit follows the
+  live arrangement plus a staged position only when the staged layout is
+  valid; a detached placement cannot drag the preview out to chase it.
+- Refits are **animated** (160 ms). The first fit on opening the page is not
+  animated, so the panel does not zoom out from an empty preview.
+- The transient overflow pan now **animates back** when a drop settles; it
+  used to snap back instantly.
+- A staged drop no longer waits for the state settle. Staging changes nothing
+  live, so the bindings reapply the staged position immediately and the fit
+  updates at once. Only Apply holds the preview, because only Apply changes
+  the live state.
+- Pending entries are pruned when their display disappears (unplugged,
+  disabled or mirrored), so a staged position cannot be applied to a screen
+  that is gone.
+- The state poll is 3 s instead of 5 s.
+
 ## 0.3.8
 
 Zoom, and exact proportions.

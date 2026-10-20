@@ -331,7 +331,7 @@ Item {
   }
 
   Timer {
-    interval: 5000
+    interval: 3000
     running: true
     repeat: true
     onTriggered: s.refresh()
