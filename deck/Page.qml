@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import qs.Commons
 
 // Display page, rendered by Deck and by this plugin's own popup.
@@ -29,7 +30,12 @@ Item {
   }
 
   readonly property string selectedName: target ? target.name : ""
-  onSelectedNameChanged: rateOpen = false
+  onSelectedNameChanged: {
+    rateOpen = false
+    resolutionOpen = false
+    scaleOpen = false
+    if (state && selectedName !== "") state.probeBrightness(selectedName)
+  }
 
   // Monitors the target can be compared with. A mirrored output is not part
   // of the desktop, so it is not part of the arrangement.
@@ -113,6 +119,48 @@ Item {
     var pm = pendingMode(m)
     return pm !== "" ? state.modeRateLabel(pm) : (Math.round(Number(m.rate)) + " Hz")
   }
+  readonly property var textStops: [9, 10, 11, 12, 14, 16, 20]
+  property bool resolutionOpen: false
+  property bool scaleOpen: false
+  property bool textOpen: false
+
+  function targetResolutions() {
+    return (state && target) ? state.resolutionsFor(target.name) : []
+  }
+  function targetResolutionLabel() {
+    if (!target) return ""
+    var list = targetResolutions()
+    for (var i = 0; i < list.length; i++)
+      if (list[i].w === target.w && list[i].h === target.h) return list[i].label
+    return target.w + "×" + target.h
+  }
+  function applyResolution(mode) {
+    resolutionOpen = false
+    if (!state || !target) return
+    var m = state.byName(target.name)
+    if (m) state.applyArrangement(target.name, m.x, m.y, mode, m.scale)
+  }
+
+  function targetScales() {
+    return (state && target) ? state.scaleOptions(target.w, target.h) : []
+  }
+  function targetScaleLabel() {
+    if (!state || !target) return ""
+    return state.scaleLabel(state.cleanScale(target.scale, target.w, target.h))
+  }
+  function applyScale(value) {
+    scaleOpen = false
+    if (!state || !target) return
+    var m = state.byName(target.name)
+    if (m) state.applyArrangement(target.name, m.x, m.y, state.currentMode(m), value)
+  }
+
+  function currentTextSize() { return Style.font.baseSize }
+  function setTextSize(px) {
+    textOpen = false
+    Quickshell.execDetached(["omarchy-display-text-size", String(px)])
+  }
+
   // A rate is an explicit choice and trivially reversible, so it is applied
   // immediately. The position is the LIVE one: applying at posX/posY would
   // also apply a staged position that has not been confirmed.
@@ -138,7 +186,11 @@ Item {
 
   // The host injects `state` after the page instance exists, so this is the
   // reliable moment to re-read: the page can open long after the last poll.
-  onStateChanged: if (state) state.refresh()
+  onStateChanged: {
+    if (!state) return
+    state.refresh()
+    if (selectedName !== "") state.probeBrightness(selectedName)
+  }
   Component.onCompleted: if (state) state.refresh()
 
   // ----------------------------------------------------------------- chrome
@@ -453,6 +505,82 @@ Item {
         }
       }
     }
+      // Resolution, labelled by common aspect ratio. Picking one applies its
+      // highest advertised rate immediately.
+      Item {
+        width: parent.width
+        height: Style.space(30)
+        visible: page.target && page.targetResolutions().length > 1
+
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: page.resolutionOpen = !page.resolutionOpen
+        }
+
+        Text {
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: "Resolution"
+          color: Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.body
+        }
+
+        Text {
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: page.targetResolutionLabel() + "  ▾"
+          color: Util.alpha(Color.foreground, 0.7)
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      Column {
+        width: parent.width
+        spacing: 0
+        visible: page.resolutionOpen
+
+        Repeater {
+          model: page.targetResolutions()
+
+          delegate: Item {
+            required property var modelData
+            readonly property bool current: page.target
+              && modelData.w === page.target.w && modelData.h === page.target.h
+
+            width: col.width
+            height: Style.space(26)
+
+            Rectangle {
+              anchors.fill: parent
+              color: parent.current
+                ? Util.alpha(Color.accent, Style.selectedFillAlpha)
+                : "transparent"
+            }
+
+            Text {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(20)
+              anchors.verticalCenter: parent.verticalCenter
+              text: modelData.label
+              color: parent.current ? Color.accent : Color.foreground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: page.applyResolution(modelData.mode)
+            }
+          }
+        }
+      }
+
       // Refresh rate of the selected display, chosen from the modes the panel
       // actually advertises at its current resolution.
       Item {
@@ -529,6 +657,82 @@ Item {
         }
       }
 
+      // Scale presets, cleaned to values Hyprland accepts for this mode.
+      Item {
+        width: parent.width
+        height: Style.space(30)
+        visible: page.target && page.targetScales().length > 1
+
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: page.scaleOpen = !page.scaleOpen
+        }
+
+        Text {
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: "Scale"
+          color: Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.body
+        }
+
+        Text {
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: page.targetScaleLabel() + "  ▾"
+          color: Util.alpha(Color.foreground, 0.7)
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      Column {
+        width: parent.width
+        spacing: 0
+        visible: page.scaleOpen
+
+        Repeater {
+          model: page.targetScales()
+
+          delegate: Item {
+            required property var modelData
+            readonly property bool current: page.target
+              && Math.abs(modelData.value
+                 - page.state.cleanScale(page.target.scale, page.target.w, page.target.h)) < 0.001
+
+            width: col.width
+            height: Style.space(26)
+
+            Rectangle {
+              anchors.fill: parent
+              color: parent.current
+                ? Util.alpha(Color.accent, Style.selectedFillAlpha)
+                : "transparent"
+            }
+
+            Text {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(20)
+              anchors.verticalCenter: parent.verticalCenter
+              text: modelData.label
+              color: parent.current ? Color.accent : Color.foreground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: page.applyScale(modelData.value)
+            }
+          }
+        }
+      }
+
     // ---- mirroring ----
     Item {
       width: parent.width
@@ -567,12 +771,14 @@ Item {
       id: brightnessSection
       glyph: "☼"
       title: "Brightness"
-      visible: page.state && page.target && page.state.hasBrightness(page.target.name)
+      visible: page.state && page.target && page.state.brightnessAvailable
+        && page.state.brightnessMonitor === page.target.name
 
     Item {
       width: parent.width
       height: Style.space(24)
-      visible: page.state && page.target && page.state.hasBrightness(page.target.name)
+      visible: page.state && page.target && page.state.brightnessAvailable
+        && page.state.brightnessMonitor === page.target.name
 
       Text {
         id: levelGlyph
@@ -642,6 +848,88 @@ Item {
         }
       }
     }
+    }
+
+    Rule { }
+
+    // ---- text size (global: shell, GTK and terminals) ----
+    Section {
+      id: textSizeSection
+      glyph: "A"
+      title: "Text size"
+      value: Math.round(page.currentTextSize()) + " px"
+
+      Item {
+        width: parent.width
+        height: Style.space(30)
+
+        MouseArea {
+          anchors.fill: parent
+          cursorShape: Qt.PointingHandCursor
+          onClicked: page.textOpen = !page.textOpen
+        }
+
+        Text {
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: "Size"
+          color: Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.body
+        }
+
+        Text {
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: Math.round(page.currentTextSize()) + " px  ▾"
+          color: Util.alpha(Color.foreground, 0.7)
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      Column {
+        width: parent.width
+        spacing: 0
+        visible: page.textOpen
+
+        Repeater {
+          model: page.textStops
+
+          delegate: Item {
+            required property var modelData
+            readonly property bool current: Math.round(modelData) === Math.round(page.currentTextSize())
+
+            width: col.width
+            height: Style.space(26)
+
+            Rectangle {
+              anchors.fill: parent
+              color: parent.current
+                ? Util.alpha(Color.accent, Style.selectedFillAlpha)
+                : "transparent"
+            }
+
+            Text {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(20)
+              anchors.verticalCenter: parent.verticalCenter
+              text: modelData + " px"
+              color: parent.current ? Color.accent : Color.foreground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: page.setTextSize(modelData)
+            }
+          }
+        }
+      }
     }
 
     Rule { }

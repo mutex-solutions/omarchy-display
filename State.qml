@@ -18,7 +18,10 @@ Item {
   property var monitors: []
 
   property int brightness: 0
-  property bool brightnessAvailable: true
+  property bool brightnessAvailable: false
+  property string brightnessMonitor: ""
+  property string brightnessProbeName: ""
+  property string pendingBrightnessProbe: ""
 
   // The window the compositor considers focused. The Deck panel is a layer
   // surface and does not become the active window, so this is the window the
@@ -109,12 +112,98 @@ Item {
   // Refresh rates the panel advertises at its CURRENT resolution. The mode in
   // use is included even when the panel does not advertise it (the XPS 13
   // accepts a custom 60 Hz mode that is absent from availableModes).
-  function ratesFor(name) {
+  function gcd(a, b) {
+    while (b) { var t = a % b; a = b; b = t }
+    return a
+  }
+
+  // Hyprland only accepts scales where the mode divides into whole logical
+  // pixels (1/120 steps), the same rule as omarchy-hyprland-monitor-scaling.
+  function cleanScale(scale, w, h) {
+    var g = gcd(w * 120, h * 120)
+    var k = Math.round(Number(scale) * 120)
+    if (k > g) k = g
+    while (g % k !== 0) k++
+    return k / 120
+  }
+
+  function scaleLabel(scale) {
+    var s = Math.round(Number(scale) * 100) / 100
+    return (Math.abs(s - Math.round(s)) < 0.005 ? String(Math.round(s)) : s.toFixed(2)) + "×"
+  }
+
+  function scaleOptions(w, h) {
+    var presets = [1, 1.25, 1.6, 2, 3, 4]
+    var out = []
+    var seen = {}
+    for (var i = 0; i < presets.length; i++) {
+      var c = cleanScale(presets[i], w, h)
+      var key = String(Math.round(c * 10000))
+      if (seen[key]) continue
+      seen[key] = true
+      out.push({ value: c, label: scaleLabel(c) })
+    }
+    return out
+  }
+
+  function aspectLabel(w, h) {
+    var r = w / h
+    var known = [[16 / 9, "16:9"], [16 / 10, "16:10"], [3 / 2, "3:2"],
+                 [21 / 9, "21:9"], [32 / 9, "32:9"], [4 / 3, "4:3"], [5 / 4, "5:4"]]
+    var best = null
+    var bestD = 0.02
+    for (var i = 0; i < known.length; i++) {
+      var d = Math.abs(r - known[i][0])
+      if (d < bestD) { bestD = d; best = known[i][1] }
+    }
+    return best
+  }
+
+  // Resolutions the panel advertises, grouped and labelled by common aspect
+  // ratio. Small legacy modes are dropped; the current resolution is always
+  // present even if it matches nothing. `mode` is the highest-rate mode at
+  // that resolution, used when the user picks it.
+  function resolutionsFor(name) {
+    var m = byName(name)
+    if (!m) return []
+    var map = {}
+    for (var i = 0; i < m.modes.length; i++) {
+      var p = String(m.modes[i]).match(/^([0-9]+)x([0-9]+)@([0-9.]+)Hz$/)
+      if (!p) continue
+      var w = Number(p[1]), h = Number(p[2]), rate = Number(p[3])
+      var key = w + "x" + h
+      if (!map[key]) map[key] = { w: w, h: h, maxRate: 0, mode: "" }
+      if (rate > map[key].maxRate) {
+        map[key].maxRate = rate
+        map[key].mode = w + "x" + h + "@" + p[3]
+      }
+    }
+    var cur = m.w + "x" + m.h
+    if (!map[cur]) map[cur] = { w: m.w, h: m.h, maxRate: Number(m.rate), mode: currentMode(m) }
+    var out = []
+    for (var k in map) {
+      var e = map[k]
+      var asp = aspectLabel(e.w, e.h)
+      var isCurrent = e.w === m.w && e.h === m.h
+      if (!isCurrent && (e.h < 720 || asp === null)) continue
+      out.push({
+        w: e.w, h: e.h, mode: e.mode, maxRate: e.maxRate, aspect: asp,
+        label: e.w + "×" + e.h + (asp ? " · " + asp : "")
+      })
+    }
+    out.sort(function(a, b) { return b.w * b.h - a.w * a.h })
+    return out
+  }
+
+  function ratesFor(name, wantW, wantH) {
     var m = byName(name)
     if (!m) return []
     var out = []
     var seen = {}
-    var res = m.w + "x" + m.h
+    var tw = (wantW !== undefined && wantW > 0) ? wantW : m.w
+    var th = (wantH !== undefined && wantH > 0) ? wantH : m.h
+    var res = tw + "x" + th
+    var isNative = (tw === m.w && th === m.h)
     for (var i = 0; i < m.modes.length; i++) {
       var ms = String(m.modes[i])
       var p = ms.match(/^([0-9]+)x([0-9]+)@([0-9.]+)Hz$/)
@@ -130,7 +219,7 @@ Item {
                  label: rateLabel(rate) })
     }
     var ck = Number(m.rate).toFixed(2)
-    if (!seen[ck]) {
+    if (isNative && !seen[ck]) {
       seen[ck] = true
       out.push({ mode: currentMode(m), rate: Number(m.rate), label: rateLabel(m.rate) })
     }
@@ -138,7 +227,7 @@ Item {
     // 2560x1600@60 mode. Without this fallback the 120/60 choice is invisible.
     // The seen check must include the current-mode entry above, or a live
     // 60 Hz rate would be listed twice.
-    if (isInternal(m.name) && !seen["60.00"]) {
+    if (isNative && isInternal(m.name) && !seen["60.00"]) {
       seen["60.00"] = true
       out.push({ mode: res + "@60", rate: 60, label: rateLabel(60) })
     }
@@ -163,13 +252,14 @@ Item {
   // Mode, position and scale in one rule. The mode is part of the rule so a
   // staged rate and a staged position are applied together, not in two steps
   // that can briefly disagree.
-  function applyArrangement(name, x, y, mode) {
+  function applyArrangement(name, x, y, mode, scale) {
     var m = byName(name)
     if (!m) return
     var md = (mode && String(mode) !== "") ? String(mode) : modeString(m)
+    var sc = (scale !== undefined && Number(scale) > 0) ? Number(scale) : m.scale
     applyLua('hl.monitor({ output = "' + name + '", mode = "' + md
       + '", position = "' + Math.round(x) + "x" + Math.round(y)
-      + '", scale = ' + m.scale + ', mirror = "" })')
+      + '", scale = ' + sc + ', mirror = "" })')
   }
 
   // Explicit position, in logical pixels. `mirror = ""` makes arranging an
@@ -310,20 +400,55 @@ Item {
     }
   }
 
+  // Brightness is per monitor. omarchy-brightness-display handles the
+  // internal backlight, Apple displays and DDC/CI for external ones, so the
+  // same control works for eDP-1 and for the ASUS over DDC.
   Process {
     id: brightnessProbe
-    command: ["brightnessctl", "-m"]
+    command: ["true"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
+        if (s.brightnessProbeName !== s.brightnessMonitor) return
         var raw = String(text || "").trim()
-        if (raw === "") { s.brightnessAvailable = false; return }
-        var parts = raw.split(",")
-        if (parts.length < 5) { s.brightnessAvailable = false; return }
-        var pct = parseInt(String(parts[3]).replace("%", ""), 10)
-        if (!isNaN(pct)) { s.brightnessAvailable = true; s.brightness = pct }
+        var pct = parseInt(raw, 10)
+        if (raw === "" || raw === "unavailable" || isNaN(pct)) {
+          s.brightnessAvailable = false
+          s.brightness = 0
+        } else {
+          s.brightnessAvailable = true
+          s.brightness = Math.max(0, Math.min(100, pct))
+        }
       }
     }
+    onExited: {
+      if (s.pendingBrightnessProbe !== "" && s.pendingBrightnessProbe !== s.brightnessProbeName) {
+        var next = s.pendingBrightnessProbe
+        s.pendingBrightnessProbe = ""
+        s.startBrightnessProbe(next)
+      }
+    }
+  }
+
+  function startBrightnessProbe(name) {
+    s.brightnessMonitor = name
+    s.brightnessProbeName = name
+    s.brightnessAvailable = false
+    brightnessProbe.command = ["omarchy-brightness-display", "--monitor", name]
+    brightnessProbe.running = true
+  }
+
+  function probeBrightness(name) {
+    if (!name) {
+      s.brightnessMonitor = ""
+      s.brightnessAvailable = false
+      return
+    }
+    if (brightnessProbe.running) {
+      s.pendingBrightnessProbe = name
+      return
+    }
+    s.startBrightnessProbe(name)
   }
 
   Process {
@@ -334,7 +459,9 @@ Item {
   function setBrightness(pct) {
     var value = Math.max(1, Math.min(100, Math.round(Number(pct))))
     s.brightness = value
-    brightnessSetter.command = ["brightnessctl", "set", value + "%"]
+    if (s.brightnessMonitor === "") return
+    brightnessSetter.command = ["omarchy-brightness-display", "--no-osd",
+      "--monitor", s.brightnessMonitor, value + "%"]
     if (!brightnessSetter.running) brightnessSetter.running = true
   }
 
@@ -392,7 +519,6 @@ Item {
 
   function refresh() {
     if (!monitorProbe.running) monitorProbe.running = true
-    if (!brightnessProbe.running) brightnessProbe.running = true
     if (!activeWindowProbe.running) activeWindowProbe.running = true
   }
 

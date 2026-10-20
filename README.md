@@ -66,9 +66,18 @@ omarchy plugin add https://github.com/mutex-solutions/omarchy-display
   choice possible on the XPS 13. A rate change **applies immediately**: it is
   an explicit selection and trivially reversible. Positions remain staged
   behind Apply/Cancel, because those are the ones that are easy to knock.
-- **Brightness is shown only for the internal display.** `brightnessctl`
-  addresses the laptop backlight, not an external monitor, so selecting an
-  external display hides the section instead of moving the wrong screen.
+- **Brightness follows the selected display** through
+  `omarchy-brightness-display`, which handles the internal backlight, Apple
+  displays and DDC/CI for external ones. The ASUS reports and accepts DDC
+  brightness, so the section is real for both screens; it is hidden when the
+  helper reports no controllable backlight.
+- **Resolution** is chosen from the modes the panel advertises, labelled by
+  common aspect ratio (16:9, 16:10, 3:2, 21:9, 4:3, 5:4). Picking one applies
+  its highest rate immediately.
+- **Scale** uses the same cleaned presets as `omarchy-hyprland-monitor-scaling`
+  (1, 1.25, 1.6, 2, 3, 4, rounded to a scale Hyprland accepts for the mode).
+- **Text size** drives `omarchy-display-text-size`, so the shell, GTK apps and
+  terminals move together, as in the stock display panel.
 - **Sections collapse** from their headers; the chevron shows the state.
 - **Mirror** shows the target on the first other enabled monitor.
 - **Windows** moves windows between screens. **Move** sends the focused window

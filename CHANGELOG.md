@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.18
+
+Resolution, scale, text size, and per-monitor brightness, reusing Omarchy's
+own helpers.
+
+- **Brightness** now goes through `omarchy-brightness-display --monitor`:
+  internal backlight, Apple displays and DDC/CI externally. The ASUS answers
+  and accepts DDC, so the slider controls the screen it is attached to,
+  including when an external display is selected. The section hides when the
+  helper reports nothing controllable.
+- **Resolution** picker from `availableModes`, grouped and labelled by common
+  aspect ratio. Selecting applies the highest rate at that resolution
+  immediately. Modes below 720p and odd aspects are filtered out; the current
+  resolution is always present.
+- **Scale** presets (`1, 1.25, 1.6, 2, 3, 4`) cleaned with the same gcd rule as
+  `omarchy-hyprland-monitor-scaling`, applied immediately.
+- **Text size** stops (9–20 px) through `omarchy-display-text-size`, which
+  scales the shell, GTK and terminals together.
+- The rate list uses the selected resolution; rates remain immediate.
+
+Verified: DP-1 listed 8 resolutions (16:9, 4:3, 5:4), 6 scales and DDC
+brightness 100; eDP-1 listed its single resolution, 6 scales and internal
+brightness 100; current resolution, scale and text size re-applied without
+error.
+
 ## 0.3.17
 
 - Duplicate rate entry fixed. When the internal panel was already at 60 Hz,
