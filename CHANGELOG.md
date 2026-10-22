@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.23
+
+- A hold on the 4x1 Display tile opens the display page, matching the host gesture on non-custom tiles.
+
 ## 0.3.22
 
 - **Apply sends the whole arrangement in one eval.** It used to apply only the

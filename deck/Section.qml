@@ -35,8 +35,27 @@ Item {
       readonly property var screens: st ? st.enabledMonitors : []
 
       MouseArea {
+        id: pageArea
         anchors.fill: parent
-        onClicked: s.openPage()
+        property bool held: false
+        onPressed: {
+          held = false
+          pageHold.restart()
+        }
+        onReleased: {
+          pageHold.stop()
+          if (!held) s.openPage()
+        }
+        onCanceled: pageHold.stop()
+
+        Timer {
+          id: pageHold
+          interval: 450
+          onTriggered: {
+            pageArea.held = true
+            s.openPage()
+          }
+        }
       }
 
       Text {
