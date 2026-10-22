@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.22
+
+- **Apply sends the whole arrangement in one eval.** It used to apply only the
+  monitor that was moved. Moving one output next to another can make Hyprland
+  shift the other out of the way, so the applied layout did not match the
+  preview: the staged monitor landed, the anchor was pushed aside, and the
+  page saved the corner arrangement instead of the centred one.
+- The staged monitors are now followed by every anchor's final position in a
+  single `hl.monitor` script. Verified from the corner layout: one eval with
+  eDP-1 at 8320x1080 then DP-1 at 8000x0 produced the centred, flush-below
+  arrangement.
+
 ## 0.3.21
 
 - The Deck tile is neutral: a display has no on/off state, so it no longer

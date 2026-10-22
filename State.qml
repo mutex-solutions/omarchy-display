@@ -247,6 +247,26 @@ Item {
       + '", scale = ' + sc + ', mirror = "" })')
   }
 
+  // Apply a whole arrangement in one eval. Moving one output into another's
+  // old area can make Hyprland shift the other; sending every output's final
+  // position in one script leaves the requested layout in place. Staged
+  // outputs must come first, the anchors after them.
+  function applyLayout(entries) {
+    if (!entries || entries.length === 0) return
+    var lines = []
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i]
+      var m = byName(e.name)
+      if (!m) continue
+      var md = (e.mode && String(e.mode) !== "") ? String(e.mode) : modeString(m)
+      var sc = (e.scale !== undefined && Number(e.scale) > 0) ? Number(e.scale) : m.scale
+      lines.push('hl.monitor({ output = "' + e.name + '", mode = "' + md
+        + '", position = "' + Math.round(e.x) + "x" + Math.round(e.y)
+        + '", scale = ' + sc + ', mirror = "" })')
+    }
+    if (lines.length) applyLua(lines.join("\n"))
+  }
+
   // Explicit position, in logical pixels. `mirror = ""` makes arranging an
   // output always mean "extended": without it a rule can leave an output
   // mirrored while its position says otherwise.

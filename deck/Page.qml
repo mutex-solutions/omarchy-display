@@ -158,12 +158,31 @@ Item {
 
   function applyPending() {
     if (!state || pendingCount === 0) return
+    var entries = []
+    var applied = ({})
     for (var k in pending) {
       var p = pending[k]
       var m = state.byName(k)
-      state.applyArrangement(k, p.x, p.y,
-        p.mode ? p.mode : (m ? state.currentMode(m) : ""))
+      entries.push({
+        name: k, x: p.x, y: p.y,
+        mode: p.mode ? p.mode : (m ? state.currentMode(m) : ""),
+        scale: m ? m.scale : 1
+      })
+      applied[k] = true
     }
+    // The displays that did not move are anchors: apply their final positions
+    // too, or Hyprland can shift them out of the way when a staged monitor
+    // lands next to them.
+    var all = state.monitors
+    for (var i = 0; i < all.length; i++) {
+      var mm = all[i]
+      if (applied[mm.name]) continue
+      entries.push({
+        name: mm.name, x: mm.x, y: mm.y,
+        mode: state.currentMode(mm), scale: mm.scale
+      })
+    }
+    state.applyLayout(entries)
     canvas.holdForApply()
   }
 
