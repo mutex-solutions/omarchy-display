@@ -25,7 +25,7 @@ Item {
 
   readonly property bool active: true
   readonly property string label: "Display"
-  readonly property string icon: "☼"
+  readonly property string icon: "󰍹"
 
   readonly property var enabledMonitors: {
     var out = []

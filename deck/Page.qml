@@ -407,7 +407,7 @@ Item {
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
         width: Style.space(30)
-        text: "☼"
+        text: page.state ? page.state.icon : ""
         color: Color.foreground
         font.family: Style.font.family
         font.pixelSize: Style.font.display
@@ -766,7 +766,7 @@ Item {
 
     }
 
-    Rule { }
+    Rule { visible: displaysSection.visible }
 
     // ---- brightness ----
     Section {
@@ -852,14 +852,13 @@ Item {
     }
     }
 
-    Rule { }
+    Rule { visible: brightnessSection.visible }
 
     // ---- text size (global: shell, GTK and terminals) ----
     Section {
       id: textSizeSection
       glyph: "A"
       title: "Text size"
-      value: Math.round(page.currentTextSize()) + " px"
 
       Item {
         width: parent.width

@@ -58,22 +58,30 @@ Item {
         }
       }
 
-      Text {
+      // The glyph sits in the same fixed cell as Deck's default tile body, so
+      // the text column lines up with the other tiles whatever the glyph is.
+      Item {
         id: glyph
         anchors.left: parent.left
-        anchors.leftMargin: Style.space(14)
-        anchors.verticalCenter: parent.verticalCenter
-        text: "☼"
-        color: Color.accent
-        font.family: Style.font.family
-        font.pixelSize: Style.font.display
+        anchors.leftMargin: Style.space(12)
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: Style.space(28)
+
+        Text {
+          anchors.centerIn: parent
+          text: s.icon
+          color: s.active ? Color.accent : Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.display
+        }
       }
 
       Column {
         anchors.left: glyph.right
-        anchors.leftMargin: Style.space(11)
+        anchors.leftMargin: Style.space(8)
         anchors.right: parent.right
-        anchors.rightMargin: Style.space(14)
+        anchors.rightMargin: Style.space(12)
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.space(1)
 

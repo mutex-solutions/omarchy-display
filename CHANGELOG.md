@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.24
+
+- The 4x1 tile glyph uses Deck's fixed icon cell and the section's own icon, and
+  is accent coloured only when the tile is active.
+- The tile and page use a monitor glyph from the same icon set as the other
+  Deck tiles.
+- The Text size header no longer repeats the value shown in its row, and the
+  rules around the Displays and Brightness sections are hidden with them, so a
+  single-monitor machine no longer shows two rules a few pixels apart.
+
 ## 0.3.23
 
 - A hold on the 4x1 Display tile opens the display page, matching the host gesture on non-custom tiles.
