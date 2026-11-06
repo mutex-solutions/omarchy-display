@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.25
+
+- Holding the large tile shows Deck's progress hairline, like every other tile (needs Deck 0.10.3).
+
 ## 0.3.24
 
 - The 4x1 tile glyph uses Deck's fixed icon cell and the section's own icon, and
