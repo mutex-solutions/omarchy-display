@@ -176,7 +176,10 @@ Item {
     var all = state.monitors
     for (var i = 0; i < all.length; i++) {
       var mm = all[i]
-      if (applied[mm.name]) continue
+      // Only extended, enabled outputs are anchors. A rule for a disabled one
+      // (the laptop panel in clamshell) would switch it back on, and the
+      // `mirror = ""` in every layout rule would end a mirror.
+      if (applied[mm.name] || mm.disabled || mm.mirrorOf !== "none") continue
       entries.push({
         name: mm.name, x: mm.x, y: mm.y,
         mode: state.currentMode(mm), scale: mm.scale
@@ -498,7 +501,43 @@ Item {
                 : modelData.w + "×" + modelData.h + " · " + page.rateTextFor(modelData))
         }
 
+        // Re-detect: a software replug, for a monitor that came up with a
+        // short mode list. External monitors only, and only once the root
+        // helper is installed. An Item owns the anchoring (a Row would reject
+        // anchors on its children).
+        Item {
+          id: redetectButton
+          anchors.right: rowSwitch.left
+          anchors.rightMargin: Style.space(10)
+          anchors.verticalCenter: parent.verticalCenter
+          width: redetectLabel.implicitWidth
+          height: parent.height
+          visible: page.state && page.state.canRedetect(modelData)
+          readonly property bool busy: page.state && page.state.redetecting === modelData.name
+
+          Text {
+            id: redetectLabel
+            anchors.verticalCenter: parent.verticalCenter
+            text: redetectButton.busy ? "Re-detecting…" : "Re-detect"
+            color: redetectArea.containsMouse && !redetectButton.busy
+              ? Color.accent
+              : Util.alpha(Color.foreground, 0.6)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
+          MouseArea {
+            id: redetectArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            enabled: page.state && page.state.redetecting === ""
+            onClicked: page.state.redetect(modelData.name)
+          }
+        }
+
         Switch {
+          id: rowSwitch
           anchors.right: parent.right
           anchors.rightMargin: Style.space(8)
           anchors.verticalCenter: parent.verticalCenter
@@ -506,6 +545,18 @@ Item {
           onToggled: page.state.setDisabled(modelData.name, !modelData.disabled)
         }
       }
+    }
+
+    Text {
+      width: col.width
+      leftPadding: Style.space(8)
+      rightPadding: Style.space(8)
+      visible: page.state && page.state.redetectError !== ""
+      text: page.state ? page.state.redetectError : ""
+      wrapMode: Text.Wrap
+      color: Color.urgent
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
     }
       // Resolution, labelled by common aspect ratio. Picking one applies its
       // highest advertised rate immediately.

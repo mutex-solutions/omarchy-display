@@ -1,0 +1,61 @@
+#!/bin/bash
+# Re-detect one external monitor: what unplugging and replugging its cable does.
+#
+# Runs as root through pkexec (policy: com.mutex-solutions.display.redetect).
+# Installed to /usr/local/libexec by scripts/install-redetect.sh.
+#
+# Why this exists: Hyprland reads a monitor's mode list once, when the connector
+# connects. A dock that hands over a partial EDID first leaves it with a short list
+# (an ASUS XG27UCG behind an OWC Thunderbolt 3 dock came up with 1440p as the top
+# mode), and neither a config reload nor turning the output off and on in Hyprland
+# re-reads it. Forcing the connector off makes the kernel report a disconnect;
+# handing it back to "detect" makes the kernel probe the still-powered monitor,
+# read its EDID afresh and report a connect, which Hyprland treats as a new plug.
+#
+# Rejected: DDC power-off and wake (VCP D6). The standby is a real disconnect, but
+# DDC runs over the link that just dropped, so the wake can never be sent; the
+# monitor's own power button is then the only way back.
+set -u
+
+name="${1:-}"
+
+# Only a plain connector name: it is used in a path, as root.
+if [[ ! $name =~ ^[A-Za-z0-9-]+$ ]]; then
+  echo "invalid connector name" >&2
+  exit 2
+fi
+
+# The laptop panel is never re-detected. It has no cable to replug, and a forced
+# off there blanks the screen.
+if [[ $name =~ ^(eDP|LVDS|DSI)- ]]; then
+  echo "refusing the internal panel $name" >&2
+  exit 2
+fi
+
+shopt -s nullglob
+matches=(/sys/class/drm/card*-"$name"/status)
+if (( ${#matches[@]} != 1 )); then
+  echo "no single DRM connector named $name" >&2
+  exit 3
+fi
+status="${matches[0]}"
+
+if [[ $(<"$status") != connected ]]; then
+  echo "$name is not connected" >&2
+  exit 4
+fi
+
+# Whatever happens below, the connector must not stay forced off.
+trap 'echo detect > "$status"' EXIT
+
+echo off > "$status"
+# Long enough for the compositor to handle the removal before the connect.
+sleep 1.5
+echo detect > "$status"
+trap - EXIT
+
+# Report what the kernel found, so a monitor that did not come back is visible.
+sleep 1
+result=$(<"$status")
+echo "$name $result"
+[[ $result == connected ]] || exit 5

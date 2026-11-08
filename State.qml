@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import qs.Commons
 
 // Display state: every monitor, its layout position, brightness, and the
@@ -165,6 +166,15 @@ Item {
     }
     var cur = m.w + "x" + m.h
     if (!map[cur]) map[cur] = { w: m.w, h: m.h, maxRate: Number(m.rate), mode: currentMode(m) }
+    // Resolutions the kernel has but Hyprland was never given (a partial EDID
+    // at connect, see kernelModes). sysfs carries no rates, so these are
+    // offered at 60 Hz, the rate every EDID resolution is in practice listed
+    // at; Hyprland builds the mode itself and falls back if the link refuses.
+    var km = kernelModes[name] || []
+    for (var j = 0; j < km.length; j++) {
+      var kk = km[j].w + "x" + km[j].h
+      if (!map[kk]) map[kk] = { w: km[j].w, h: km[j].h, maxRate: 60, mode: kk + "@60" }
+    }
     var out = []
     for (var k in map) {
       var e = map[k]
@@ -358,6 +368,7 @@ Item {
             }
           }
           s.monitors = out
+          s.noticeChange(out)
         } catch (e) {
         }
       }
@@ -429,38 +440,153 @@ Item {
   // ------------------------------------------------------------ persistence
   //
   // Hyprland does not remember a live `hl.monitor` rule across a config
-  // reload, so the arrangement is written to a small Lua file after every
-  // change. Sourcing it from monitors.lua makes the arrangement survive:
+  // reload, so what the page applies is saved and turned into rules that
+  // monitors.lua sources (see README, "Saved settings"):
   //
-  //   dofile(os.getenv("HOME") .. "/.config/deck/monitors.lua")
+  //   ~/.config/deck/monitors.json  the record, read back on start so monitors
+  //                                 that are not plugged in keep their entry
+  //   ~/.config/deck/monitors.lua   generated from it: data only, handed to
+  //                                 hypr/monitors.lua in this plugin
   //
-  // This plugin never edits monitors.lua itself.
+  // Mode and scale are saved per monitor IDENTITY, positions per SET of
+  // monitors. Disabled and mirrored outputs are not saved: a laptop panel shut
+  // off by clamshell, or a screen turned off once, must not come back off.
+  //
+  // This plugin never edits ~/.config/hypr/monitors.lua itself.
 
-  readonly property string layoutPath: Quickshell.env("HOME") + "/.config/deck/monitors.lua"
+  readonly property string deckDir: Quickshell.env("HOME") + "/.config/deck"
+  readonly property string layoutPath: deckDir + "/monitors.lua"
+  readonly property string storePath: deckDir + "/monitors.json"
+  readonly property string applierPath: String(Qt.resolvedUrl("hypr/monitors.lua")).replace("file://", "")
 
   property bool pendingPersist: false
+  property bool storeLoaded: false
+  property var store: ({ monitors: {}, layouts: {} })
 
-  function layoutScript() {
-    var lines = ["-- Written by mutex-solutions.display. Do not edit by hand."]
-    for (var i = 0; i < monitors.length; i++) {
-      var m = monitors[i]
-      if (!m.name) continue
-      if (m.disabled) {
-        lines.push('hl.monitor({ output = "' + m.name + '", disabled = true })')
-      } else if (m.mirrorOf && m.mirrorOf !== "none") {
-        lines.push('hl.monitor({ output = "' + m.name + '", mirror = "' + m.mirrorOf + '" })')
-      } else {
-        lines.push('hl.monitor({ output = "' + m.name + '", mode = "' + modeString(m)
-          + '", position = "' + m.x + "x" + m.y + '", scale = ' + m.scale + ' })')
-      }
+  // The description (make, model, serial) follows a monitor from port to port;
+  // the connector name does not. Two enabled monitors reporting the same
+  // description cannot be told apart by it, so both fall back to the connector.
+  // Same rule as hypr/monitors.lua and Omarchy's monitor-workspaces.lua.
+  function identityOf(m) {
+    var d = String(m.description || "")
+    if (d === "") return m.name
+    var same = 0
+    for (var i = 0; i < layoutMonitors.length; i++)
+      if (layoutMonitors[i].description === d) same++
+    return same === 1 ? d : m.name
+  }
+
+  function outputFor(m) {
+    var id = identityOf(m)
+    return id === m.name ? m.name : "desc:" + id
+  }
+
+  // Exact rate, so a 59.95 Hz choice is not saved as 60.
+  function savedMode(m) {
+    return m.w + "x" + m.h + "@" + (Math.round(Number(m.rate) * 1000) / 1000)
+  }
+
+  function luaString(v) {
+    return '"' + String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+      .replace(/\n/g, "\\n").replace(/\r/g, "\\r") + '"'
+  }
+
+  function layoutScript(st) {
+    var L = ["-- Written by mutex-solutions.display from monitors.json. Do not edit by",
+             "-- hand: the plugin rewrites it. The logic is in the plugin's hypr/monitors.lua.",
+             "local data = {", "  monitors = {"]
+    for (var id in st.monitors) {
+      var e = st.monitors[id]
+      L.push("    [" + luaString(id) + "] = { output = " + luaString(e.output)
+        + ", mode = " + luaString(e.mode) + ", scale = " + Number(e.scale) + " },")
     }
-    return lines.join("\n") + "\n"
+    L.push("  },", "  layouts = {")
+    for (var key in st.layouts) {
+      var pos = st.layouts[key]
+      var parts = []
+      for (var pid in pos) parts.push("[" + luaString(pid) + "] = " + luaString(pos[pid]))
+      L.push("    { " + parts.join(", ") + " },")
+    }
+    L.push("  },", "}",
+           "local applier = " + luaString(applierPath),
+           "local f = io.open(applier)",
+           "if f then f:close(); dofile(applier)(data) end")
+    return L.join("\n") + "\n"
   }
 
   function persistLayout() {
     if (!pendingPersist) return
+    // Never write before the record is read, or every unplugged monitor's
+    // entry would be lost.
+    if (!storeLoaded) { persistTimer.restart(); return }
+    // An automatic save that a plug or unplug overtook is dropped: what is on
+    // screen now is a fallback, not a choice. The page's own actions still save.
+    if (autoPersist && Date.now() - setChangedAt < settleMs) {
+      pendingPersist = false
+      autoPersist = false
+      return
+    }
     pendingPersist = false
-    layoutFile.setText(layoutScript())
+    autoPersist = false
+
+    var st = JSON.parse(JSON.stringify(store))
+    if (!st.monitors) st.monitors = {}
+    if (!st.layouts) st.layouts = {}
+    var ids = []
+    var layout = {}
+    for (var i = 0; i < layoutMonitors.length; i++) {
+      var m = layoutMonitors[i]
+      if (!m.name || m.w <= 0 || m.h <= 0) continue
+      var id = identityOf(m)
+      st.monitors[id] = { output: outputFor(m), mode: savedMode(m), scale: m.scale,
+                          lastConnector: m.name }
+      layout[id] = m.x + "x" + m.y
+      ids.push(id)
+    }
+    if (ids.length === 0) return
+    ids.sort()
+    st.layouts[ids.join("\n")] = layout
+
+    store = st
+    storeFile.setText(JSON.stringify(st, null, 2) + "\n")
+    layoutFile.setText(layoutScript(st))
+  }
+
+  // Empty until prepareFiles has made sure the files exist: setText() needs
+  // the directory and the file, and an empty file then reads as an empty
+  // record instead of a load failure that would have to be told apart from a
+  // permissions error.
+  FileView {
+    id: storeFile
+    path: ""
+    atomicWrites: true
+    printErrors: false
+    onLoaded: {
+      try {
+        var t = String(text() || "").trim()
+        var parsed = t === "" ? {} : JSON.parse(t)
+        s.store = { monitors: parsed.monitors || {}, layouts: parsed.layouts || {} }
+        s.storeLoaded = true
+      } catch (e) {
+        // A record that does not parse is left alone rather than overwritten.
+        console.warn("display: " + s.storePath + " does not parse; not saving: " + e)
+      }
+    }
+    // The file exists by now, so a failure is not "first run" and the record
+    // is not replaced.
+    onLoadFailed: console.warn("display: cannot read " + s.storePath + "; not saving")
+  }
+
+  Process {
+    id: prepareFiles
+    // Create only what is missing: `touch` on an existing file moves its mtime,
+    // and every new bar (Omarchy builds one per screen, so a replug makes a new
+    // one) would then look like a save.
+    command: ["sh", "-c", 'mkdir -p "$1" && for f in "$2" "$3"; do [ -e "$f" ] || : > "$f"; done',
+              "_", s.deckDir, s.layoutPath, s.storePath]
+    onExited: function(code) {
+      if (code === 0) storeFile.path = s.storePath
+    }
   }
 
   FileView {
@@ -470,16 +596,158 @@ Item {
     printErrors: false
   }
 
+  // Save changes made by ANY tool, not only this page: Omarchy's own display
+  // panel, its scale keys, a hand-typed `hyprctl eval`. Left unsaved, the next
+  // replug, re-detect or reload put back the older saved values over them
+  // (found 2026-11-08: scales set from Omarchy's panel were reset by a
+  // re-detect).
+  //
+  // But not every change is a choice. Right after a monitor is plugged in or
+  // removed, what Hyprland shows is whatever it fell back to (a 1440p mode from a
+  // short list), and saving that would overwrite the real choice. So a change
+  // counts only while the same set of monitors has been there for settleMs.
+  readonly property int settleMs: 8000
+  property string lastSetKey: ""
+  property string lastShape: ""
+  property double setChangedAt: 0
+
+  function noticeChange(list) {
+    var names = []
+    var shape = []
+    for (var i = 0; i < list.length; i++) {
+      var m = list[i]
+      if (m.disabled || m.mirrorOf !== "none") continue
+      names.push(m.name)
+      shape.push(m.name + "=" + m.w + "x" + m.h + "@" + Math.round(m.rate * 1000)
+        + "/" + m.scale + "/" + m.x + "x" + m.y)
+    }
+    names.sort()
+    shape.sort()
+    var setKey = names.join(",")
+    var shapeKey = shape.join(";")
+    var now = Date.now()
+    if (setKey !== lastSetKey) {
+      lastSetKey = setKey
+      setChangedAt = now
+    } else if (shapeKey !== lastShape && lastShape !== ""
+               && now - setChangedAt >= settleMs && redetecting === "") {
+      pendingPersist = true
+      autoPersist = true
+      persistTimer.restart()
+    }
+    lastShape = shapeKey
+  }
+
+  // The poll runs every 3 s, and a re-detect or a dock blip disconnects a
+  // monitor for less than that, so the poll can miss the removal entirely and
+  // read the half-restored layout after it as a choice (seen 2026-11-08: a save
+  // landed mid re-detect). Hyprland's own events cannot be missed.
+  property bool autoPersist: false
+
+  function monitorsChanging() {
+    setChangedAt = Date.now()
+  }
+
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) {
+      var n = event ? String(event.name) : ""
+      if (n.indexOf("monitoradded") === 0 || n.indexOf("monitorremoved") === 0)
+        s.monitorsChanging()
+    }
+  }
+
+  // ------------------------------------------------------------ kernel modes
+  //
+  // Hyprland reads a monitor's modes once, at connect. A dock that hands over a
+  // partial EDID first leaves it with a short list (the XG27UCG offered 1440p
+  // through an OWC Thunderbolt 3 dock while the kernel later had 4K), and a
+  // config reload does not re-read it. The kernel's list is world-readable in
+  // sysfs, so the resolution picker offers what the kernel has too. Read only:
+  // forcing a re-probe needs root and is not this plugin's business.
+  property var kernelModes: ({})
+
+  Process {
+    id: kernelModesProbe
+    command: ["sh", "-c",
+      'for c in /sys/class/drm/card*-*; do [ "$(cat "$c/status" 2>/dev/null)" = connected ] || continue; '
+      + 'n=${c##*/}; n=${n#card*-}; sort -u "$c/modes" 2>/dev/null | sed "s/^/$n /"; done']
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var out = {}
+        var lines = String(text || "").split("\n")
+        for (var i = 0; i < lines.length; i++) {
+          var p = lines[i].match(/^(\S+) ([0-9]+)x([0-9]+)/)
+          if (!p) continue
+          if (!out[p[1]]) out[p[1]] = []
+          out[p[1]].push({ w: Number(p[2]), h: Number(p[3]) })
+        }
+        s.kernelModes = out
+      }
+    }
+  }
+
   Timer {
     id: persistTimer
     interval: 900
     onTriggered: s.persistLayout()
   }
 
+  // ------------------------------------------------------------- re-detect
+  //
+  // A software unplug and replug of one external monitor, so Hyprland reads its
+  // modes afresh (see kernelModes). It needs root, so it goes through pkexec and
+  // the polkit agent prompts. The helper and its polkit action are installed
+  // once by scripts/install-redetect.sh; until then the button is hidden. The
+  // saved settings bring the monitor back as it was, through monitor.added.
+  readonly property string redetectHelper: "/usr/local/libexec/omarchy-display-redetect"
+  property bool redetectAvailable: false
+  property string redetecting: ""
+  property string redetectError: ""
+
+  Process {
+    id: redetectProbe
+    command: ["sh", "-c", 'test -x "$1" && test -f /usr/share/polkit-1/actions/com.mutex-solutions.display.redetect.policy',
+              "_", s.redetectHelper]
+    onExited: function(code) { s.redetectAvailable = (code === 0) }
+  }
+
+  Process {
+    id: redetectRunner
+    command: ["true"]
+    stderr: StdioCollector { id: redetectStderr; waitForEnd: true }
+    onExited: function(code) {
+      // 126: the prompt was dismissed; 127: not authorised. Neither is an error
+      // worth a red line, the user chose it.
+      if (code === 0 || code === 126) s.redetectError = ""
+      else if (code === 127) s.redetectError = "Not authorised to re-detect"
+      else s.redetectError = (String(redetectStderr.text || "").trim()
+                              || ("Re-detect failed (" + code + ")"))
+      s.redetecting = ""
+      s.monitorsChanging()
+      settleTimer.restart()
+    }
+  }
+
+  function canRedetect(m) {
+    return redetectAvailable && !!m && !m.disabled && !isInternal(m.name)
+  }
+
+  function redetect(name) {
+    if (redetectRunner.running || !name || isInternal(name)) return
+    redetectError = ""
+    redetecting = name
+    monitorsChanging()
+    redetectRunner.command = ["pkexec", redetectHelper, name]
+    redetectRunner.running = true
+  }
+
   // ---------------------------------------------------------------- polling
 
   function refresh() {
     if (!monitorProbe.running) monitorProbe.running = true
+    if (!kernelModesProbe.running) kernelModesProbe.running = true
   }
 
   // After an action, wait for the compositor to settle, re-read, then write
@@ -501,9 +769,8 @@ Item {
   }
 
   Component.onCompleted: {
-    // setText() needs both the directory and the file to exist.
-    Quickshell.execDetached(["bash", "-c", 'mkdir -p "$1" && touch "$2"', "_",
-      Quickshell.env("HOME") + "/.config/deck", layoutPath])
+    prepareFiles.running = true
+    redetectProbe.running = true
     refresh()
   }
 }
