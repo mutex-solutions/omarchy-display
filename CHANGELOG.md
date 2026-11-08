@@ -1,8 +1,55 @@
 # Changelog
 
-## 0.3.25
+## 0.4.1
 
-- Holding the large tile shows Deck's progress hairline, like every other tile (needs Deck 0.10.3).
+- Holding the large tile shows Deck's progress hairline, like every other tile (needs Deck 0.10.5).
+
+## 0.4.0
+
+Saved settings follow the monitor, not the port.
+
+- **Mode and scale are saved per monitor**, keyed on the EDID description (make,
+  model, serial) and written as `desc:` rules, instead of per connector name.
+  The same monitor on another port or dock gets its own settings back.
+- **Positions are saved per set of monitors.** A layout applies only when
+  exactly the monitors it was arranged with are enabled; any other combination
+  gets `auto` placement instead of two screens saved at `0x0` overlapping.
+  `hypr/monitors.lua` re-applies the matching layout on `monitor.added` and
+  `monitor.removed`, because a hotplug does not re-run the config.
+- The record (`~/.config/deck/monitors.json`) keeps monitors that are not
+  plugged in. The generated `~/.config/deck/monitors.lua` is data only and calls
+  the plugin's `hypr/monitors.lua`. It now goes at the **end** of
+  `monitors.lua`, guarded by `io.open`; see the README.
+- **Disabled and mirrored outputs are no longer saved.** A saved `disabled = true`
+  would have left a clamshell-disabled laptop panel black when the lid opened
+  undocked.
+- **The mode is saved explicitly.** Hyprland reads a monitor's mode list only at
+  connect, and a reload does not re-read it. An ASUS XG27UCG behind an OWC
+  Thunderbolt 3 dock came up with a list that stopped at 1440p while the kernel
+  had 4K. `"preferred"` kept choosing 1440p; an explicit `3840x2160@60` is
+  accepted as a custom mode.
+- **The Resolution picker also offers the kernel's resolutions** from sysfs, at
+  60 Hz, so a monitor in that state can still be set to its real resolution.
+- **Changes made by any tool are saved**, not only the page's own: Omarchy's
+  display panel, its scale keys, `hyprctl eval`. Before, a scale set from
+  Omarchy's panel was overwritten by the older saved value on the next replug.
+  A change counts only while the same monitors have been connected for 8 s, so
+  the fallback mode Hyprland shows right after a plug-in is never saved as a
+  choice.
+- Hyprland's `monitoradded`/`monitorremoved` events also restart that 8 s
+  window. The 3 s poll alone can miss a disconnect shorter than itself, such as
+  a re-detect.
+- Starting up no longer `touch`es existing files. Omarchy builds a new bar per
+  screen on every replug, and the moved mtime looked like a save.
+- **Re-detect** per external monitor: a software unplug and replug (connector
+  forced off, then back to `detect`) through `pkexec`, so Hyprland reads the
+  full mode list again. The root half (`system/`) is installed once by
+  `scripts/install-redetect.sh`; the button is hidden without it. DDC
+  standby-and-wake was tried and rejected: the wake cannot reach a monitor whose
+  link has dropped.
+- **Apply no longer touches disabled or mirrored outputs.** It sent every
+  monitor as an anchor, which could switch a clamshell-disabled laptop panel
+  back on and, through `mirror = ""`, end a mirror.
 
 ## 0.3.24
 
