@@ -1,5 +1,4 @@
 import QtQuick
-import Quickshell
 import qs.Commons
 
 // Deck adapter. The five members Deck reads, forwarded to the shared State.
@@ -12,6 +11,8 @@ import qs.Commons
 Item {
   id: s
 
+  Translations { id: strings; directory: Qt.resolvedUrl("../i18n") }
+
   readonly property var state: stateLoader.item
 
   // A display has no on/off; a selected fill would claim a state it lacks.
@@ -19,10 +20,6 @@ Item {
   readonly property string label: state ? state.label : ""
   readonly property string detail: state ? state.detail : ""
   readonly property string icon: state ? state.icon : ""
-
-  function openPage() {
-    Quickshell.execDetached(["omarchy-shell", "mutex-solutions.deck", "openSection", "display"])
-  }
 
   readonly property Component tileFull: fullTile
 
@@ -33,6 +30,7 @@ Item {
       id: full
       signal holdStarted()
       signal holdEnded()
+      signal pageRequested(string sectionId)
       readonly property var st: s.state
       readonly property var screens: st ? st.enabledMonitors : []
 
@@ -48,7 +46,7 @@ Item {
         onReleased: {
           pageHold.stop()
           full.holdEnded()
-          if (!held) s.openPage()
+          if (!held) full.pageRequested("")
         }
         onCanceled: {
           pageHold.stop()
@@ -61,7 +59,7 @@ Item {
           onTriggered: {
             pageArea.held = true
             full.holdEnded()
-            s.openPage()
+            full.pageRequested("")
           }
         }
       }
@@ -95,7 +93,7 @@ Item {
 
         Text {
           width: parent.width
-          text: "Display"
+          text: strings.t("display.display")
           color: Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.body
@@ -121,7 +119,7 @@ Item {
         Text {
           visible: full.screens.length === 0
           width: parent.width
-          text: "No display detected"
+          text: strings.t("display.noDisplayDetected")
           color: Util.alpha(Color.foreground, 0.45)
           font.family: Style.font.family
           font.pixelSize: Style.font.caption

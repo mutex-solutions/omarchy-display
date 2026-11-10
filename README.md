@@ -79,29 +79,25 @@ omarchy plugin add https://github.com/mutex-solutions/omarchy-display
   (1, 1.25, 1.6, 2, 3, 4, rounded to a scale Hyprland accepts for the mode).
 - **Text size** drives `omarchy-display-text-size`, so the shell, GTK apps and
   terminals move together, as in the stock display panel.
-- **Sections collapse** from their headers; the chevron shows the state.
+- **Sections collapse** from their headers; the chevron shows the state. On a
+  single monitor the layout canvas collapses away while resolution, rate, scale,
+  brightness and text size remain available. The last enabled output cannot be
+  switched off from the page.
 - **Mirror** shows the target on the first other enabled monitor.
-- **Windows** moves windows between screens. **Move** sends the focused window
-  to the other monitor (a window belongs to a workspace, and a workspace
-  belongs to a monitor, so the move goes to the workspace that screen is
-  showing). **Swap screens** swaps the two monitors' active workspaces, which
-  moves every window on each screen to the other one in a single step and is
-  its own undo.
-- **Brightness** uses `brightnessctl`; it appears only when the machine has a
-  backlight to control.
+- **Window and workspace moves live in Sessions**, not here. Display owns the
+  physical arrangement and per-monitor settings.
 
 Positions are in **scaled logical pixels**: a 3840×2160 panel at scale 2
 occupies 1920×1080 in the layout, which is exactly what Hyprland expects.
 The preview fits the arrangement with half a display of room on each side.
-The panel is narrow, so that is the balance between drag room and a preview
-that can still be aimed; there is no zoom control.
+Zoom and pan keep that initial fit usable when a drag needs to reach beyond it.
 
 Hyprland has no "primary output" in the X11 sense: there is no flag to mark
 one monitor as primary. What decides where new windows appear is the workspace
 a window opens on, and workspaces are bound to monitors by the layout order in
-your config. **Swap screens** is therefore the practical primary/secondary
-control: it exchanges what each screen is showing without touching the
-arrangement.
+your config. **Swap sessions** in the Sessions section is therefore the practical
+primary/secondary control: it exchanges what each screen is showing without
+touching the physical arrangement.
 
 ## Saved settings
 
@@ -139,8 +135,10 @@ plugged in, so a monitor's settings wait for it. From it the plugin generates
 `~/.config/deck/monitors.lua`, which holds only data and calls
 [`hypr/monitors.lua`](hypr/monitors.lua) in this plugin. That file makes the
 per-monitor rules and re-applies the matching layout on `monitor.added`/`removed`,
-because a hotplug does not re-run the config. If the plugin is removed, the
-generated file quietly does nothing.
+because a hotplug does not re-run the config. It also reconciles the session-wide
+`GDK_SCALE` from the lowest rounded active-monitor scale, matching Omarchy's
+XWayland/GTK behavior without invoking a second config writer. If the plugin is
+removed, the generated file quietly does nothing.
 
 ### Why the mode is saved explicitly, not as "preferred"
 

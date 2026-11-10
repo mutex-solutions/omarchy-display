@@ -90,9 +90,24 @@ return function(data)
     if saved.output then rule(saved) end
   end
 
+  -- Omarchy's scaler also reconciles the session-wide XWayland/GTK scale.
+  -- Keep that side effect here instead of editing ~/.config/hypr/monitors.lua:
+  -- the generated Deck data is already sourced last and follows hotplug events.
+  local function sync_gdk(present)
+    local lowest = nil
+    for id, monitor in pairs(present) do
+      local saved = monitors[id]
+      local scale = tonumber(saved and saved.scale) or tonumber(monitor.scale) or 1
+      local rounded = math.max(1, math.floor(scale + 0.5))
+      if not lowest or rounded < lowest then lowest = rounded end
+    end
+    if lowest then hl.env("GDK_SCALE", tostring(lowest)) end
+  end
+
   -- Positions for the current set of monitors, if that set was ever arranged.
   local function arrange(gone)
     local present, n = enabled_identities(gone)
+    sync_gdk(present)
     local layout = matching(present, n)
     if not layout then return end
     for id, position in pairs(layout) do

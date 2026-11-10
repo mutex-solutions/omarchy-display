@@ -12,6 +12,8 @@ import qs.Commons
 Item {
   id: page
 
+  Translations { id: strings; directory: Qt.resolvedUrl("../i18n") }
+
   property var state: null
   property var host: null
 
@@ -551,13 +553,17 @@ Item {
       width: col.width
       leftPadding: Style.space(8)
       rightPadding: Style.space(8)
-      visible: page.state && page.state.redetectError !== ""
-      text: page.state ? page.state.redetectError : ""
+      visible: page.state && (page.state.redetectError !== "" || page.state.actionError !== "")
+      text: page.state ? (page.state.redetectError !== "" ? page.state.redetectError : page.state.actionError) : ""
       wrapMode: Text.Wrap
       color: Color.urgent
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
     }
+    }
+
+    // Per-target settings are not inside displaysSection: that section is hidden
+    // for a single-monitor machine, but resolution/rate/scale must remain available.
       // Resolution, labelled by common aspect ratio. Picking one applies its
       // highest advertised rate immediately.
       Item {
@@ -575,7 +581,7 @@ Item {
           anchors.left: parent.left
           anchors.leftMargin: Style.space(8)
           anchors.verticalCenter: parent.verticalCenter
-          text: "Resolution"
+          text: strings.t("display.resolution")
           color: Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.body
@@ -652,7 +658,7 @@ Item {
           anchors.left: parent.left
           anchors.leftMargin: Style.space(8)
           anchors.verticalCenter: parent.verticalCenter
-          text: "Refresh rate"
+          text: strings.t("display.refreshRate")
           color: Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.body
@@ -726,7 +732,7 @@ Item {
           anchors.left: parent.left
           anchors.leftMargin: Style.space(8)
           anchors.verticalCenter: parent.verticalCenter
-          text: "Scale"
+          text: strings.t("display.scale")
           color: Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.body
@@ -796,7 +802,7 @@ Item {
         anchors.left: parent.left
         anchors.leftMargin: Style.space(8)
         anchors.verticalCenter: parent.verticalCenter
-        text: "Mirror " + (page.target ? page.target.name : "")
+        text: strings.t("display.mirror") + (page.target ? page.target.name : "")
         color: Color.foreground
         font.family: Style.font.family
         font.pixelSize: Style.font.body
@@ -815,9 +821,7 @@ Item {
       }
     }
 
-    }
-
-    Rule { visible: displaysSection.visible }
+    Rule { }
 
     // ---- brightness ----
     Section {
@@ -925,7 +929,7 @@ Item {
           anchors.left: parent.left
           anchors.leftMargin: Style.space(8)
           anchors.verticalCenter: parent.verticalCenter
-          text: "Size"
+          text: strings.t("display.size")
           color: Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.body
@@ -984,10 +988,11 @@ Item {
       }
     }
 
-    Rule { }
+    Rule { visible: page.state && page.state.layoutMonitors.length > 1 }
 
-    // ---- layout preview, free drag with guides ----
+    // ---- layout preview, free drag with guides (only useful with 2+ outputs) ----
     Head {
+      visible: page.state && page.state.layoutMonitors.length > 1
       glyph: "▭"
       title: "Layout"
       value: page.state ? String(page.state.layoutMonitors.length) : "0"
@@ -996,6 +1001,7 @@ Item {
 
     Item {
       id: canvas
+      visible: page.state && page.state.layoutMonitors.length > 1
       width: parent.width
       height: Style.space(160)
       clip: true
@@ -1085,7 +1091,7 @@ Item {
       property bool fitSeen: false
       Behavior on fitAnimated {
         enabled: canvas.fitSeen
-        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: Style.duration(160); easing.type: Easing.OutCubic }
       }
       property real zoom: 1
       readonly property real scale: Math.max(0.0001, fitAnimated * zoom)
@@ -1143,11 +1149,11 @@ Item {
       property real overflowY: 0
       Behavior on overflowX {
         enabled: !canvas.dragging
-        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: Style.duration(160); easing.type: Easing.OutCubic }
       }
       Behavior on overflowY {
         enabled: !canvas.dragging
-        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: Style.duration(160); easing.type: Easing.OutCubic }
       }
       property real freeX: 0
       property real freeY: 0
@@ -1794,7 +1800,7 @@ Item {
     Rectangle {
       width: parent.width
       height: canvas.invalidText !== "" ? Style.space(26) : 0
-      visible: canvas.invalidText !== ""
+      visible: page.state && page.state.layoutMonitors.length > 1 && canvas.invalidText !== ""
       color: Util.alpha(Color.urgent, 0.08)
 
       Text {
@@ -1802,7 +1808,7 @@ Item {
         anchors.leftMargin: Style.space(8)
         anchors.rightMargin: Style.space(8)
         verticalAlignment: Text.AlignVCenter
-        text: "Invalid layout · " + canvas.invalidText
+        text: strings.t("display.invalidLayout") + canvas.invalidText
         color: Color.urgent
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
@@ -1843,6 +1849,7 @@ Item {
     Item {
       width: parent.width
       height: Style.space(26)
+      visible: page.state && page.state.layoutMonitors.length > 1
 
       Row {
         anchors.right: parent.right
@@ -1850,7 +1857,7 @@ Item {
 
         Chip {
           visible: canvas.panned || canvas.zoom !== 1
-          label: "Fit"
+          label: strings.t("display.fit")
           onPicked: canvas.resetView()
         }
         Chip {
@@ -1870,12 +1877,12 @@ Item {
       width: parent.width
       height: Style.space(26)
       spacing: Style.space(6)
-      visible: page.pendingCount > 0
+      visible: page.pendingCount > 0 && page.state && page.state.layoutMonitors.length > 1
 
       Text {
         height: parent.height
         verticalAlignment: Text.AlignVCenter
-        text: "Pending changes"
+        text: strings.t("display.pendingChanges")
         color: Util.alpha(Color.foreground, 0.45)
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
@@ -1885,7 +1892,7 @@ Item {
         onPicked: page.applyPending()
       }
       Chip {
-        label: "Cancel"
+        label: strings.t("display.cancel")
         onPicked: {
           page.clearPending()
           canvas.cancelStaged()

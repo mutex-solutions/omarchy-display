@@ -13,6 +13,8 @@ import qs.Commons
 Item {
   id: s
 
+  Translations { id: strings; directory: Qt.resolvedUrl("i18n") }
+
   // [{ name, description, w, h, x, y, scale, rate, disabled, mirrorOf, focused }]
   // New fields are appended by the code that reads them; the preview only
   // ever needs the ones above.
@@ -23,9 +25,12 @@ Item {
   property string brightnessMonitor: ""
   property string brightnessProbeName: ""
   property string pendingBrightnessProbe: ""
+  property string actionError: ""
+  property int pendingBrightnessValue: -1
+  property string pendingBrightnessName: ""
 
   readonly property bool active: true
-  readonly property string label: "Display"
+  readonly property string label: strings.t("display.display")
   readonly property string icon: "󰍹"
 
   readonly property var enabledMonitors: {
@@ -115,7 +120,7 @@ Item {
 
   function scaleLabel(scale) {
     var s = Math.round(Number(scale) * 100) / 100
-    return (Math.abs(s - Math.round(s)) < 0.005 ? String(Math.round(s)) : s.toFixed(2)) + "×"
+    return (Math.abs(s - Math.round(s)) < 0.005 ? String(Math.round(s)) : String(s)) + "×"
   }
 
   function scaleOptions(w, h) {
@@ -236,6 +241,7 @@ Item {
   // a settle delay, never assumed, so a refused rule shows up as "nothing
   // moved" rather than as a lie.
   function applyLua(script, touchesLayout) {
+    actionError = ""
     Quickshell.execDetached(["hyprctl", "eval", script])
     // Only monitor rules belong in the layout file. A window move or a
     // workspace swap does not change the arrangement, so it must not rewrite
@@ -313,6 +319,10 @@ Item {
   function setDisabled(name, off) {
     var m = byName(name)
     if (off) {
+      if (enabledMonitors.length <= 1) {
+        actionError = "Keep at least one display enabled"
+        return
+      }
       applyLua('hl.monitor({ output = "' + name + '", disabled = true })')
       return
     }
@@ -426,15 +436,33 @@ Item {
   Process {
     id: brightnessSetter
     command: ["true"]
+    onExited: {
+      if (s.pendingBrightnessValue < 0) return
+      var value = s.pendingBrightnessValue
+      var name = s.pendingBrightnessName
+      s.pendingBrightnessValue = -1
+      s.pendingBrightnessName = ""
+      if (name !== s.brightnessMonitor) return
+      s.brightnessSetter.command = ["omarchy-brightness-display", "--no-osd",
+        "--monitor", name, value + "%"]
+      s.brightnessSetter.running = true
+    }
   }
 
   function setBrightness(pct) {
     var value = Math.max(1, Math.min(100, Math.round(Number(pct))))
     s.brightness = value
     if (s.brightnessMonitor === "") return
+    if (brightnessSetter.running) {
+      // Latest value wins while the helper is running; never drop the end of a
+      // fast slider drag and leave hardware on an earlier step.
+      s.pendingBrightnessValue = value
+      s.pendingBrightnessName = s.brightnessMonitor
+      return
+    }
     brightnessSetter.command = ["omarchy-brightness-display", "--no-osd",
       "--monitor", s.brightnessMonitor, value + "%"]
-    if (!brightnessSetter.running) brightnessSetter.running = true
+    brightnessSetter.running = true
   }
 
   // ------------------------------------------------------------ persistence

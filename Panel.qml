@@ -9,6 +9,8 @@ import qs.Commons
 Panel {
   id: root
 
+  Translations { id: strings; directory: Qt.resolvedUrl("i18n") }
+
   moduleName: "mutex-solutions.display"
   ipcTarget: "mutex-solutions.display"
 
@@ -81,7 +83,7 @@ Panel {
             anchors.left: headerGlyph.right
             anchors.leftMargin: Style.space(8)
             anchors.verticalCenter: parent.verticalCenter
-            text: "Display"
+            text: strings.t("display.display")
             color: Color.foreground
             font.family: Style.font.family
             font.pixelSize: Style.font.title

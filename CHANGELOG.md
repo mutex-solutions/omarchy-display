@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- Custom tile navigation now stays inside the originating Deck panel rather than
+  using global IPC, so opening the page cannot jump to another monitor.
+
+- Resolution, refresh rate and scale controls are available on a single-monitor
+  machine; the multi-monitor layout canvas collapses away when it is not useful.
+- The last enabled output cannot be turned off from the page. Action errors are
+  shown instead of failing silently.
+- Fast brightness drags queue the latest value instead of dropping the final
+  setting while the helper is running. Scale labels no longer show trailing zeroes.
+- Deck's monitor applier reconciles `GDK_SCALE` from the active monitors, keeping
+  the existing per-monitor and hotplug rules rather than invoking a competing
+  focused-monitor config writer.
+- Animations honor reduced motion, and the UI ships an English translation
+  catalog with live language bindings.
+
 ## 0.4.1
 
 - Holding the large tile shows Deck's progress hairline, like every other tile (needs Deck 0.10.5).

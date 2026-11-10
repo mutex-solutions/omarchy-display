@@ -1,0 +1,13 @@
+{
+  "display.cancel": "Cancel",
+  "display.display": "Display",
+  "display.fit": "Fit",
+  "display.invalidLayout": "Invalid layout · ",
+  "display.mirror": "Mirror ",
+  "display.noDisplayDetected": "No display detected",
+  "display.pendingChanges": "Pending changes",
+  "display.refreshRate": "Refresh rate",
+  "display.resolution": "Resolution",
+  "display.scale": "Scale",
+  "display.size": "Size"
+}
